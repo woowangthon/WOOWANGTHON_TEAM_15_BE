@@ -26,8 +26,8 @@ class SecurityTests(unittest.TestCase):
         evidence = {"dns": {"status": "ok"}, "rdap": {"status": "ok", "age_days": 3},
                     "tls": {"status": "invalid"}, "geoip": {"status": "ok"}}
         result = score_result("https://example.com/app.apk", "example.com", evidence)
-        self.assertEqual(result["score"], 85)
-        self.assertEqual(result["level"], "위험")
+        self.assertEqual(result["score"], 40)
+        self.assertEqual(result["level"], "주의")
         evidence["rdap"] = {"status": "unknown"}
         evidence["tls"] = {"status": "ok"}
         self.assertEqual(score_result("https://example.com", "example.com", evidence)["level"], "확인 불가")

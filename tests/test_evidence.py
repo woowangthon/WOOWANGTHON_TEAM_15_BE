@@ -48,16 +48,16 @@ class EvidenceTests(unittest.IsolatedAsyncioTestCase):
 
 class ScoreBoundaryTests(unittest.TestCase):
     def test_domain_age_boundaries_and_foreign_ip_does_not_add_points(self):
-        for days, expected in [(29, 25), (30, 10), (179, 10), (180, 0)]:
+        for days, expected in [(29, 15), (30, 5), (179, 5), (180, 0)]:
             evidence = {"dns": {"status": "ok"}, "rdap": {"status": "ok", "age_days": days},
                         "tls": {"status": "ok"}, "geoip": {"status": "ok", "is_overseas": True}}
             with self.subTest(age_days=days):
                 self.assertEqual(score_result("https://example.com", "example.com", evidence)["score"], expected)
 
-    def test_short_url_file_link_reaches_danger_threshold(self):
+    def test_task_two_url_patterns_do_not_add_points(self):
         evidence = {"dns": {"status": "ok"}, "rdap": {"status": "unknown"},
                     "tls": {"status": "ok"}, "geoip": {"status": "ok"}}
         result = score_result("https://bit.ly/file.%61pk", "bit.ly", evidence)
-        self.assertEqual(result["score"], 55)
-        self.assertEqual(result["level"], "위험")
+        self.assertEqual(result["score"], 0)
+        self.assertEqual(result["level"], "확인 불가")
         self.assertFalse(result["auto_open"])

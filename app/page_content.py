@@ -1,18 +1,12 @@
-"""Extract bounded HTML text and observable cues; page instructions are untrusted data."""
+"""Extract redacted, indexed page evidence. Findings are observations, not URL/brand scores."""
 import re
 from html.parser import HTMLParser
 from urllib.parse import unquote, urljoin, urlsplit
 
+from app.behavior import supported_types
 from app.security import DOWNLOADS, parse_url
 
 TEXT_LIMIT = 4000
-SIGNAL_POINTS = {
-    "PASSWORD_FORM": 0,
-    "EXTERNAL_CREDENTIAL_FORM": 25,
-    "INSECURE_CREDENTIAL_FORM": 20,
-    "URGENT_CREDENTIAL_REQUEST": 15,
-    "PAGE_EXECUTABLE_LINK": 35,
-}
 
 
 def redact_text(value):
@@ -33,9 +27,12 @@ class PageParser(HTMLParser):
         self.passwords = 0
         self.downloads = []
         self.meta_refresh = False
+        self.has_scripts = False
 
     def handle_starttag(self, tag, attrs):
         attrs = {name: value or "" for name, value in attrs}
+        if tag == "script":
+            self.has_scripts = True
         if tag in {"script", "style", "noscript", "template", "iframe", "object"}:
             self.hidden.append(tag)
         if self.hidden:
@@ -78,32 +75,61 @@ def inspect_html(html, final_url):
     parser.feed(html)
     parser.close()
     text = redact_text(" ".join(parser.text))[:TEXT_LIMIT]
+    evidence = []
     findings = []
 
-    def add(code, message):
-        if not any(f["code"] == code for f in findings):
-            findings.append({"code": code, "points": SIGNAL_POINTS[code], "message": message})
+    # Bounded excerpts have stable IDs; unknown/invented references are rejected after inference.
+    remaining = text
+    while remaining:
+        end = min(500, len(remaining))
+        if end < len(remaining):
+            split = remaining.rfind(" ", 0, end)
+            if split > 250:
+                end = split
+        excerpt = remaining[:end].strip()
+        remaining = remaining[end:].lstrip()
+        if excerpt:
+            evidence.append({"id": f"page_text_{len(evidence) + 1}", "kind": "page_text",
+                             "text": excerpt, "supports": supported_types(excerpt)})
 
-    if parser.passwords:
-        add("PASSWORD_FORM", "페이지에 비밀번호 입력란이 있습니다. 이것만으로 악성임을 뜻하지 않습니다.")
+    def observation(code, message, evidence_id):
+        if not any(f["code"] == code for f in findings):
+            findings.append({"code": code, "points": 0, "message": message, "evidence_ids": [evidence_id]})
+
     current_host = urlsplit(final_url).hostname
     for form in parser.forms:
         if not form["passwords"]:
             continue
+        evidence_id = f"form_{sum(e['kind'] == 'form' for e in evidence) + 1}"
+        description = "비밀번호 입력란이 있는 폼입니다."
         try:
-            target, host, scheme, _ = parse_url(urljoin(final_url, form["action"]))
+            _, host, scheme, _ = parse_url(urljoin(final_url, form["action"]))
         except ValueError:
-            continue
-        if host != current_host:
-            add("EXTERNAL_CREDENTIAL_FORM", "비밀번호 폼이 현재 페이지와 다른 호스트로 전송되도록 설정되어 있습니다.")
-        if scheme == "http":
-            add("INSECURE_CREDENTIAL_FORM", "비밀번호 폼의 전송 주소가 암호화되지 않은 HTTP입니다.")
-    if parser.passwords and re.search(r"긴급|즉시|계정.{0,10}(정지|차단)|urgent|immediately|account.{0,12}suspend", text, re.I):
-        add("URGENT_CREDENTIAL_REQUEST", "비밀번호 입력란과 긴급·계정 정지 등을 강조하는 문구가 함께 있습니다.")
+            description += " 전송 주소를 해석하지 못했습니다."
+        else:
+            if host != current_host:
+                description += " 다른 호스트로 전송하도록 설정되어 있습니다. 정당한 외부 인증 서비스인지는 확인하지 않았습니다."
+                observation("EXTERNAL_CREDENTIAL_FORM", "비밀번호 폼의 전송 호스트가 다릅니다.", evidence_id)
+            if scheme == "http":
+                description += " 전송 주소는 HTTP입니다."
+                observation("INSECURE_CREDENTIAL_FORM", "비밀번호 폼의 전송 주소가 HTTP입니다.", evidence_id)
+        evidence.append({"id": evidence_id, "kind": "form", "text": description, "supports": ["credential_theft"]})
+        observation("PASSWORD_FORM", "비밀번호 입력란만으로 악성을 판단하지 않습니다.", evidence_id)
+    if parser.passwords and not any(e["kind"] == "form" for e in evidence):
+        evidence.append({"id": "form_1", "kind": "form", "text": "폼 밖에 비밀번호 입력란이 있습니다.",
+                         "supports": ["credential_theft"]})
+        observation("PASSWORD_FORM", "비밀번호 입력란만으로 악성을 판단하지 않습니다.", "form_1")
+    if parser.passwords and re.search(r"긴급|즉시|정지|urgent|immediately|suspend", text, re.I):
+        reference = next((e["id"] for e in evidence if e["kind"] == "page_text"), "form_1")
+        observation("URGENT_CREDENTIAL_REQUEST", "비밀번호 입력과 긴급성 문구가 함께 관찰됩니다.", reference)
     if parser.downloads:
-        add("PAGE_EXECUTABLE_LINK", "페이지 안에 실행·설치 파일로 보이는 링크가 있습니다. 파일을 요청하지 않았습니다.")
+        evidence.append({"id": "link_1", "kind": "link", "text": "실행·설치 파일로 보이는 링크가 있습니다. 파일은 요청하지 않았습니다.",
+                         "supports": ["unsafe_installation"]})
+        observation("PAGE_EXECUTABLE_LINK", "설치 링크만으로 악성을 판단하지 않습니다.", "link_1")
+    readable = bool(text or parser.passwords or parser.downloads)
     return {
-        "text": text, "findings": findings, "password_fields": min(parser.passwords, 100),
-        "meta_refresh": parser.meta_refresh,
-        "coverage": "서버가 반환한 정적 HTML 일부만 분석했습니다. JavaScript 실행·폼 제출·파일 검사는 수행하지 않습니다.",
+        "text": text, "evidence": evidence, "findings": findings,
+        "password_fields": min(parser.passwords, 100), "meta_refresh": parser.meta_refresh,
+        "readable": readable and not (parser.has_scripts and len(text) < 40 and not parser.passwords and not parser.downloads),
+        "coverage": "최대 4,000자의 정적 HTML 본문과 폼 구조만 검사했습니다. JavaScript 실행·폼 제출·파일 검사는 수행하지 않습니다.",
     }

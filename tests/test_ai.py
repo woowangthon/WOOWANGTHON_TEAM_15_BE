@@ -8,6 +8,7 @@ from fastapi.testclient import TestClient
 
 from app.ai import _cache, explain_result
 from app.main import app
+from app.security import score_result
 
 RESULT = {
     "url": "https://example.com/?token=private-secret",
@@ -20,6 +21,9 @@ RESULT = {
     "analysis_complete": False, "navigation_allowed": True, "auto_open": False,
     "requires_confirmation": True, "warning": "안전을 보장하지 않습니다.",
 }
+RESULT["evidence"]["rdap"]["age_days"] = 3
+RESULT.update(score_result(RESULT["url"], RESULT["hostname"], RESULT["evidence"]))
+
 SETTINGS = {"api_key": "test-only-key", "base_url": "https://gateway.example/v1/gateway", "model": "gpt-6-luna"}
 
 

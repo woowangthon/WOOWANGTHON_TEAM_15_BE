@@ -25,8 +25,11 @@ SYSTEM_PROMPT = (
 def fallback_text(result):
     reasons = [r["message"] for r in result["reasons"][:3]]
     detail = " ".join(reasons) if reasons else "현재 규칙에서 추가 위험 신호를 찾지 못했습니다."
+    if result["score"] is None:
+        detail = "위험도를 산출할 자료가 부족합니다."
     incomplete = "" if result["analysis_complete"] else " 일부 정보는 확인하지 못했습니다."
-    return f'{result["level"]}({result["score"]}점): {detail}{incomplete} 안전을 보장하지 않으며, 접속 전 사용자 확인이 필요합니다.'
+    label = f'{result["score"]}점' if result["score"] is not None else "점수 산출 불가"
+    return f'{result["level"]}({label}): {detail}{incomplete} 안전을 보장하지 않으며, 접속 전 사용자 확인이 필요합니다.'
 
 
 def summary_for_ai(result):

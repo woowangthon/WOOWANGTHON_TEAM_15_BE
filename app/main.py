@@ -7,11 +7,11 @@ from pydantic import BaseModel, Field
 
 from app import config  # Load the backend .env before reading application settings.
 from app.security import analyze_url
-from app.ai import explain_result
+from app.ai import fallback_text
 from app.models import AnalyzeResponse
 from app.page_analysis import inspect_page
 
-app = FastAPI(title="QR Alert API", version="0.4.0")
+app = FastAPI(title="QR Alert API", version="0.5.0")
 origins = [s.strip() for s in os.getenv("CORS_ORIGINS", "").split(",") if s.strip()]
 if origins:
     app.add_middleware(CORSMiddleware, allow_origins=origins,
@@ -43,10 +43,10 @@ async def analyze(request: AnalyzeRequest):
     if request.inspect_page:
         result = await inspect_page(result, enabled_ai=request.include_ai)
         page = result["page"]
-        if page["ai_status"] in {"generated", "cached"}:
-            # Reuse the page analysis text instead of paying for a second model call.
-            explanation = {key: page[key] for key in ("ai_explanation", "ai_status", "ai_model")}
-            return {**result, **explanation}
-        return {**result, **await explain_result(result, enabled=False),
-                "ai_status": "disabled" if not request.include_ai else "skipped" if page["ai_status"] == "skipped" else "unavailable"}
-    return {**result, **await explain_result(result, enabled=request.include_ai)}
+        ai_status = page["ai_status"]
+        ai_model = page["ai_model"]
+    else:
+        ai_status = "skipped" if request.include_ai else "disabled"
+        ai_model = None
+    return {**result, "ai_status": ai_status, "ai_model": ai_model,
+            "ai_explanation": fallback_text(result)}

@@ -12,11 +12,11 @@ import maxminddb
 import tldextract
 
 from app.config import geoip_database_path
+from app.scoring import score_metadata
 
 EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
 TIMEOUT = 5
 _bootstrap_cache = None
-SHORTENERS = {"bit.ly", "t.co", "tinyurl.com", "url.kr", "vo.la", "han.gl"}
 DOWNLOADS = (".apk", ".exe", ".msi", ".bat", ".cmd", ".scr", ".ps1", ".dmg")
 
 
@@ -181,38 +181,8 @@ def country_check(addresses):
 
 
 def score_result(url, host, evidence):
-    reasons = []
-    def add(code, points, message):
-        reasons.append({"code": code, "points": points, "message": message})
-    if urlsplit(url).scheme == "http":
-        add("NO_HTTPS", 15, "HTTPS를 사용하지 않습니다.")
-    try:
-        ipaddress.ip_address(host)
-        add("IP_HOST", 15, "도메인 대신 IP 주소를 사용합니다.")
-    except ValueError:
-        pass
-    if host in SHORTENERS:
-        add("SHORT_URL", 20, "단축 URL로 최종 목적지를 확인할 수 없습니다.")
-    from urllib.parse import unquote
-    if unquote(urlsplit(url).path).lower().endswith(DOWNLOADS):
-        add("EXECUTABLE_LINK", 35, "실행·설치 파일로 보이는 경로입니다. 실제 파일은 다운로드하지 않았습니다.")
-    rdap = evidence["rdap"]
-    if rdap.get("status") == "ok" and rdap["age_days"] < 30:
-        add("NEW_DOMAIN", 25, "도메인이 생성된 지 30일 미만입니다.")
-    elif rdap.get("status") == "ok" and rdap["age_days"] < 180:
-        add("YOUNG_DOMAIN", 10, "도메인이 생성된 지 180일 미만입니다.")
-    if evidence["tls"]["status"] == "invalid":
-        add("INVALID_TLS", 25, "TLS 인증서 검증에 실패했습니다.")
-    blocked = evidence["dns"]["status"] == "blocked"
-    if blocked:
-        add("BLOCKED_TARGET", 0, "내부 네트워크 접근 방지를 위해 검사를 차단했습니다.")
-    score = min(100, sum(r["points"] for r in reasons))
-    incomplete = any(e["status"] in {"unknown", "blocked"} for e in evidence.values())
-    level = "위험" if score >= 50 else "주의" if score >= 20 else "확인 불가" if incomplete else "낮음"
-    return {"score": score, "level": level, "reasons": reasons,
-            "analysis_complete": not incomplete, "navigation_allowed": not blocked,
-            "auto_open": False, "requires_confirmation": True,
-            "warning": "점수는 참고용이며 안전을 보장하지 않습니다. 사용자가 확인하기 전에는 URL을 열지 마세요."}
+    # Host/URL pattern and brand scoring belongs to task 2.
+    return score_metadata(url, evidence)
 
 
 async def analyze_url(text):
