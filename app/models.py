@@ -56,6 +56,31 @@ class Reason(BaseModel):
     message: str
 
 
+class RedirectHop(BaseModel):
+    url: str
+    http_status: int
+
+
+class PageReport(BaseModel):
+    status: CheckStatus
+    reason: str | None = None
+    final_url: str | None = None
+    final_hostname: str | None = None
+    final_evidence: Evidence | None = None
+    redirect_chain: list[RedirectHop] = Field(default_factory=list)
+    http_status: int | None = None
+    bytes_read: int | None = None
+    download_response: bool = False
+    findings: list[Reason] = Field(default_factory=list)
+    password_fields: int = 0
+    meta_refresh: bool = False
+    coverage: str | None = None
+    ai_status: Literal["generated", "cached", "disabled", "unavailable", "skipped"]
+    ai_model: str | None = None
+    ai_assessment: Literal["suspicious", "no_obvious_signals", "inconclusive"]
+    ai_explanation: str | None = None
+
+
 class AnalyzeResponse(BaseModel):
     url: str
     hostname: str
@@ -71,3 +96,4 @@ class AnalyzeResponse(BaseModel):
     ai_explanation: str
     ai_status: Literal["generated", "cached", "disabled", "unavailable", "skipped"]
     ai_model: str | None
+    page: PageReport | None = None

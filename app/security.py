@@ -1,4 +1,4 @@
-"""External evidence collection. Never requests the scanned URL's HTTP content."""
+"""Domain/TLS/IP evidence collection. Page HTTP fetching lives in page_fetch.py."""
 import asyncio
 import ipaddress
 import socket
@@ -51,6 +51,8 @@ def parse_url(text):
 
 def public_ip(value):
     address = ipaddress.ip_address(value)
+    if isinstance(address, ipaddress.IPv6Address) and address in ipaddress.ip_network("64:ff9b::/96"):
+        return False
     return address.is_global and not address.is_multicast and not (
         isinstance(address, ipaddress.IPv6Address) and (address.ipv4_mapped or address.sixtofour or address.teredo)
     )

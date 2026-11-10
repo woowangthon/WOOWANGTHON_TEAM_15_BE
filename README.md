@@ -6,7 +6,7 @@
 3. 이 저장소(3번 담당): 입력 검증 → DNS 공인 IP 확인 → RDAP 생성일/TLS 인증서 병렬 조회 → IP 국가 조회 → 점수/근거 반환.
 4. 4번 담당: 결과 화면, 선택적인 AI 설명, 사용자 확인 후 이동.
 
-이미지 업로드, OCR, 최종 목적지 추적, DB 분석 이력 저장은 현재 범위에 포함되지 않습니다.
+이미지 업로드, OCR, DB 분석 이력 영구 저장은 현재 범위에 포함되지 않습니다. 선택적 페이지 검사에서는 검증된 HTTP 리디렉션을 제한적으로 추적합니다.
 검사 결과와 근거는 JSON 응답으로 반환하며 서버에 영구 저장하지 않습니다.
 
 ## 실행 (Python 3.11 이상)
@@ -45,7 +45,7 @@ analysis_complete는 외부 조회의 완료 여부이며 전체 보안 검사�
 점수는 악성 확률이 아닌 초기 휴리스틱입니다. 실제 데이터로 조정해야 합니다.
 - HTTP: 15
 - IP 주소형: 15
-- 알려진 단축 URL: 20 (최종 목적지는 추적하지 않음)
+- 알려진 단축 URL: 20 (페이지 검사 모드는 목적지를 제한적으로 추적)
 - 실행/설치 파일 경로: 35 (실제 응답/파일 확인 안 함)
 - 도메인 생성 30일 미만: 25 / 180일 미만: 10 (중복 없음)
 - TLS 인증서 검증 실패: 25
@@ -58,7 +58,7 @@ RDAP: IANA HTTPS bootstrap → 등록 도메인 RDAP. tldextract 내장 Public S
 RDAP redirect는 자동 추적하지 않아 일부 등록기관은 unknown일 수 있습니다.
 TLS: DNS에서 얻은 공인 IP에 직접 연결하고 원래 호스트명으로 SNI/인증서 검증.
 인증서 만료·호스트명·신뢰 체인을 검사합니다. DNS IP 중 첫 번째 IP만 검사합니다.
-대상 URL의 HTTP GET/HEAD, 다운로드, 단축 URL 이동은 하지 않습니다.
+기본 모드에서는 대상 URL의 HTTP 요청이나 단축 URL 이동을 하지 않습니다. inspect_page=true는 아래 제한된 GET 수집을 수행합니다.
 DNS/TLS 연결은 발생하므로 대상 서버와 전혀 통신하지 않는 방식은 아닙니다.
 조회별 timeout 적용, RDAP 전체 12초 제한. DB 미설정/네트워크 실패를 안전으로 간주하지 않습니다.
 운영 배포 전 인증/요청 제한, 동시 요청 상한, 외부 조회 캐시, 최신 PSL/국가 DB,
@@ -163,7 +163,7 @@ is_overseas는 한국(KR) 외 국가 여부이며 알 수 없거나 IP별 결과
 evidence.tls는 인증서 만료 시각(ISO 8601), 남은 일수, 발급자, TLS 버전을 반환합니다.
 DNS의 첫 번째 공인 IP에서만 TLS를 검증하므로 모든 CDN 노드를 검증한 결과는 아닙니다.
 IP 주소형 URL의 RDAP은 not_applicable입니다.
-RDAP 조회에는 IANA bootstrap을 프로세스별 1시간 캐시하며 사이트 리디렉션은 추적하지 않습니다.
+RDAP 조회에는 IANA bootstrap을 프로세스별 1시간 캐시하며 RDAP 서비스 리디렉션은 추적하지 않습니다.
 API 문서의 Evidence 하위 모델에 각 필드가 표시됩니다.
 프론트는 level/score/reasons/ai_explanation을 표시하고
 geoip.is_overseas는 국가 정보로만 표시하세요. 자동 접속하지 않습니다.
@@ -171,6 +171,55 @@ brand_texts는 2번 담당 비교 기능이 연결되기 전까지 분석에 반
 QR/이미지 판독과 사용자 확인 후 이동은 별도 Expo 저장소의 담당 범위입니다.
 GeoLite 데이터의 출처: MaxMind, https://www.maxmind.com .
 실제 서비스 배포 시 최신 데이터 유지 및 GeoLite 이용/출처 표시 조건을 확인하세요.
+
+## 선택적 페이지 내용 분석
+요청에 inspect_page: true를 명시해야 대상 페이지에 GET 요청을 보냅니다.
+include_ai: false이면 HTML의 규칙 분석만 수행하고 AI를 호출하지 않습니다.
+
+```json
+{"qr_text":"https://example.com","brand_texts":[],"include_ai":true,"inspect_page":true}
+```
+
+동작: 기존 도메인/TLS/IP 검사 → 제한된 HTML 수집 → 폼/텍스트/설치 링크 분석 → BAZE 내용 분석.
+AI 페이지 설명을 최상위 ai_explanation에도 재사용하므로 설명용 AI 호출은 추가로 발생하지 않습니다.
+AI는 전달받은 본문 일부를 분석하며 브라우저나 도구를 직접 제어하지 않습니다.
+본문 최대 4,000자를 외부 BAZE 모델로 전달합니다. URL·이메일·긴 숫자열은 제거하지만
+본문의 모든 개인정보를 완벽하게 제거하는 기능은 아니므로 앱에서 사용자가 선택하도록 하세요.
+
+수집 제한:
+- 매 이동마다 HTTP(S), 80/443 포트, 자격증명 없는 URL, DNS 전체 공인 IP 여부 검사.
+- DNS 재해석 없이 검증한 IP에 연결. 원래 hostname으로 Host/SNI/인증서 검증.
+- 쿠키·사용자 인증 헤더·환경 프록시 미사용. BAZE 키는 대상 사이트에 전송하지 않음.
+- HTTP 리디렉션 최대 3회, HTTPS→HTTP 이동 차단, 전체 수집 18초 제한.
+- HTML 최대 256KiB. 첨부/비 HTML/압축 응답은 본문을 읽지 않고 중단.
+- 알려진 실행/문서/압축/이미지 파일 경로는 요청하지 않음.
+- JavaScript/iframe 실행, 하위 리소스 요청, 폼 제출, 파일 실행 없음.
+- HTML/JS 기반 이동은 추적하지 않으며 meta refresh 발견 시 미완료 표시.
+- 원문 HTML/본문은 응답/디스크에 저장하지 않음. 짧은 AI 결과는 프로세스별 10분 캐시.
+
+page 응답:
+- status/reason: 수집 성공 또는 차단/누락 사유
+- final_url/redirect_chain: 확인한 이동 경로 (프론트에서 자동 접속 금지)
+- final_evidence: 호스트가 바뀐 경우 최종 호스트의 RDAP/TLS/국가 정보
+- findings: 서버가 관찰한 신호와 고정 점수
+- ai_assessment: suspicious / no_obvious_signals / inconclusive
+- ai_status/ai_explanation: AI 처리 상태와 설명
+- coverage: 정적 HTML 검사 범위. no_obvious_signals도 안전 보증이 아닙니다.
+
+추가 점수:
+- 비밀번호 입력란만 존재: 0 (정상 로그인도 존재)
+- 비밀번호 폼이 다른 호스트로 전송: 25
+- 비밀번호 폼이 HTTP로 전송: 20
+- 비밀번호 요구와 긴급/계정 정지 문구 동시 존재: 15
+- 페이지 내 실행·설치 파일 링크: 35
+- 최종 호스트의 기존 위험 신호도 합치되 동일 코드 점수는 중복하지 않음
+AI는 모든 관찰 코드를 누락 없이 반환해야 하며 신호나 점수를 임의로 추가/삭제할 수 없습니다.
+페이지 지시문은 비신뢰 데이터로 구분하고 구조화된 AI 응답을 검증합니다.
+공식 도메인 DB와 브랜드 대조, 알려진 악성 URL DB, 동적 스크립트 분석은 포함하지 않습니다.
+
+제한된 HTTP 수집기이며 별도 VM/컨테이너 샌드박스나 백신이 아닙니다.
+공개 배포 전 수집 워커의 네트워크 송신 제한과 API 인증/요청 제한을 적용하세요.
+설계 참고: https://cheatsheetseries.owasp.org/cheatsheets/Server_Side_Request_Forgery_Prevention_Cheat_Sheet.html
 
 ## 테스트
 ```powershell
