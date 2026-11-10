@@ -27,7 +27,6 @@ class TestURLAnalysis(unittest.TestCase):
         result = check_suspicious_patterns(
             "https://bit.ly/abc123"
         )
-
         self.assertTrue(result["suspicious"])
 
     # 4. IP 주소형 URL 탐지
@@ -35,7 +34,6 @@ class TestURLAnalysis(unittest.TestCase):
         result = check_suspicious_patterns(
             "http://192.168.0.1/login"
         )
-
         self.assertTrue(result["suspicious"])
 
     # 5. APK 파일 탐지
@@ -43,7 +41,6 @@ class TestURLAnalysis(unittest.TestCase):
         result = check_suspicious_patterns(
             "https://example.com/app.apk"
         )
-
         self.assertTrue(result["suspicious"])
 
     # 6. EXE 파일 탐지
@@ -51,7 +48,6 @@ class TestURLAnalysis(unittest.TestCase):
         result = check_suspicious_patterns(
             "https://example.com/setup.exe"
         )
-
         self.assertTrue(result["suspicious"])
 
     # 7. @ 기호를 이용한 도메인 혼동
@@ -59,7 +55,6 @@ class TestURLAnalysis(unittest.TestCase):
         result = check_suspicious_patterns(
             "https://example.com@evil.example/login"
         )
-
         self.assertTrue(result["suspicious"])
 
     # 8. 공식 도메인 일치
@@ -68,7 +63,6 @@ class TestURLAnalysis(unittest.TestCase):
             "https://example.com/login",
             ["테스트브랜드"]
         )
-
         self.assertEqual(result["status"], "matched")
 
     # 9. 가짜 도메인 불일치
@@ -77,7 +71,6 @@ class TestURLAnalysis(unittest.TestCase):
             "https://example.com.evil.example",
             ["테스트브랜드"]
         )
-
         self.assertEqual(result["status"], "mismatched")
 
     # 10. 등록되지 않은 브랜드
@@ -86,8 +79,36 @@ class TestURLAnalysis(unittest.TestCase):
             "https://example.com",
             ["없는브랜드"]
         )
-
         self.assertEqual(result["status"], "unknown")
+
+    # 11. 쿼리에 APK 파일명이 있는 경우
+    def test_query_apk(self):
+        result = check_suspicious_patterns(
+            "https://example.com/download?file=app.apk"
+        )
+        self.assertTrue(result["suspicious"])
+
+    # 12. 정상 이미지 파일명인 경우
+    def test_query_jpg(self):
+        result = check_suspicious_patterns(
+            "https://example.com/download?file=photo.jpg"
+        )
+        self.assertFalse(result["suspicious"])
+
+    # 13. 이중 인코딩된 APK 파일명인 경우
+    def test_encoded_query_apk(self):
+        result = check_suspicious_patterns(
+            "https://example.com/download?file=app%252Eapk"
+        )
+        self.assertTrue(result["suspicious"])
+
+     # 14. 여러 번 인코딩된 APK 파일명 탐지
+    def test_triple_encoded_query_apk(self):
+        result = check_suspicious_patterns(
+            "https://example.com/download?file=app%25252Eapk"
+        )
+
+        self.assertTrue(result["suspicious"])
 
 
 if __name__ == "__main__":
