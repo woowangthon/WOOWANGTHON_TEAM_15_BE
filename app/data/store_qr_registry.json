@@ -2,6 +2,8 @@
   "demo-cafe-01": {
     "store_name": "테스트카페",
     "qr_type": "menu",
-    "approved_urls": ["https://menu.example.com/store/demo-cafe-01"]
+    "verification_status": "demo",
+    "approved_urls": ["https://menu.example.com/store/demo-cafe-01"],
+    "allowed_query_params": ["table"]
   }
 }

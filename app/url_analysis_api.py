@@ -13,6 +13,7 @@ from app.services.store_qr_verifier import verify_store_qr
 # 3. 위장 도메인 탐지 기능
 from app.services.domain_impersonation import check_domain_impersonation
 from app.services.redirect_patterns import check_redirect_patterns
+from app.services.store_registry import search_stores
 
 
 app = FastAPI(title="QR Guard URL Analysis API")
@@ -79,3 +80,16 @@ def analyze(request: AnalyzeRequest):
         domain_impersonation=domain_impersonation,
         redirect_patterns=redirect     
     )
+
+# 매장 이름 검색 API
+@app.get("/api/stores/search")
+def search_store_api(keyword: str):
+
+    # 매장 검색 함수 호출
+    stores = search_stores(keyword)
+
+    # 검색 결과 반환
+    return {
+        "count": len(stores),
+        "stores": stores
+    }
