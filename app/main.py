@@ -10,6 +10,7 @@ from app.security import analyze_url
 from app.ai import fallback_text
 from app.models import AnalyzeResponse
 from app.page_analysis import inspect_page
+from app.routers.url_analysis import router as url_analysis_router
 
 app = FastAPI(title="QR Alert API", version="0.5.0")
 origins = [s.strip() for s in os.getenv("CORS_ORIGINS", "").split(",") if s.strip()]
@@ -50,3 +51,7 @@ async def analyze(request: AnalyzeRequest):
         ai_model = None
     return {**result, "ai_status": ai_status, "ai_model": ai_model,
             "ai_explanation": fallback_text(result)}
+
+
+# Register URL-pattern and store checks separately from behavior scoring.
+app.include_router(url_analysis_router)

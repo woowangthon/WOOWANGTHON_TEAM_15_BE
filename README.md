@@ -37,6 +37,21 @@ CORS_ORIGINS=http://localhost:8081
 국가 DB는 MaxMind GeoLite2 Country MMDB를 별도 확보하고 최신으로 갱신하세요.
 데이터 출처: MaxMind, https://www.maxmind.com . 서비스 배포 시 이용·출처 표시 조건을 확인하세요.
 
+## URL 패턴·매장 검사 API (2번 담당)
+같은 FastAPI 서버에 다음 API를 함께 등록합니다.
+
+| 경로 | 기능 |
+| --- | --- |
+| `POST /api/analyze` | 기존 도메인·TLS·국가 정보 및 선택적 AI 행동 점수 |
+| `POST /api/url/analyze` | URL 패턴·브랜드·매장 QR 비교 및 `risk_signals` |
+| `GET /api/stores/search?keyword=테스트카페` | 등록된 매장 이름 검색 |
+
+URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습니다.
+이 검사는 대상 사이트에 접속하지 않으며 점수를 산정하지 않습니다.
+`risk_signals`를 기존 `behavior-v1` 점수에 자동으로 합산하지 않습니다.
+서로 다른 요청·응답 형식을 유지하기 위해 분석 경로를 분리했습니다.
+상세 명세는 [위험 신호 데이터 명세](app/docs/risk_signals_contract.md)를 참고하세요.
+
 ## API
 POST /api/analyze
 ```json
