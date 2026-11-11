@@ -2,8 +2,9 @@
 
 이 저장소는 QR의 HTTP(S) URL을 받아 서버에서 도메인·TLS·IP 국가 정보를 조회하고,
 선택적으로 정적 HTML과 AI를 이용해 요구 행동의 위험도를 평가합니다.
-휴대폰 앱은 URL을 보내고 JSON을 받습니다. 1번의 QR/OCR, 2번의 URL 패턴·브랜드 비교,
-4번의 결과 화면과 사용자 확인 후 URL 열기는 별도 담당 범위입니다.
+휴대폰 앱은 URL을 보내고 JSON을 받습니다. 2번의 URL 패턴·브랜드·매장 검사는
+공통 서비스로 연결되어 한 요청에서 함께 실행됩니다.
+1번의 QR/OCR과 4번의 결과 화면·사용자 확인 후 URL 열기는 별도 담당 범위입니다.
 
 ## 실행
 Python 3.11 이상, 저장소 루트 PowerShell:
@@ -42,14 +43,15 @@ CORS_ORIGINS=http://localhost:8081
 
 | 경로 | 기능 |
 | --- | --- |
-| `POST /api/analyze` | 기존 도메인·TLS·국가 정보 및 선택적 AI 행동 점수 |
+| `POST /api/analyze` | URL·브랜드·매장 검사 + 도메인·TLS·국가 정보 + 선택적 AI 행동 점수 |
 | `POST /api/url/analyze` | URL 패턴·브랜드·매장 QR 비교 및 `risk_signals` |
 | `GET /api/stores/search?keyword=테스트카페` | 등록된 매장 이름 검색 |
 
 URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습니다.
 이 검사는 대상 사이트에 접속하지 않으며 점수를 산정하지 않습니다.
 `risk_signals`를 기존 `behavior-v1` 점수에 자동으로 합산하지 않습니다.
-서로 다른 요청·응답 형식을 유지하기 위해 분석 경로를 분리했습니다.
+`/api/analyze`는 서버 내부에서 같은 `analyze_url_signals()` 공통 함수를 호출합니다.
+`/api/url/analyze`는 URL 검사만 필요한 경우에 사용하며 서버가 자기 API를 HTTP로 호출하지 않습니다.
 상세 명세는 [위험 신호 데이터 명세](app/docs/risk_signals_contract.md)를 참고하세요.
 
 ## API
@@ -58,16 +60,31 @@ POST /api/analyze
 {
   "qr_text": "https://example.com",
   "brand_texts": [],
+  "store_id": null,
   "include_ai": true,
   "inspect_page": true
 }
 ```
-qr_text와 brand_texts는 필수입니다. brand_texts는 현재 분석에 반영하지 않습니다.
+qr_text와 brand_texts는 필수입니다. brand_texts는 공식 도메인 비교에 사용하며 인식한 브랜드가 없으면 []를 보냅니다.
+store_id는 선택 항목이며 매장 검색 결과의 ID를 보냅니다. 생략/null이면 매장 비교는 not_checked입니다.
+QR URL은 최대 4,096자, 브랜드명은 최대 30개, store_id는 최대 128자입니다.
+기본 URL 검증과 로컬 URL 검사가 통과한 뒤 DNS·페이지 수집·AI 호출을 진행합니다.
 include_ai 기본값 true, inspect_page 기본값 false.
 본문 분석에는 inspect_page=true가 필요합니다.
 inspect_page=false이면 대상 페이지의 HTTP 요청과 유료 AI 호출을 하지 않습니다.
 include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산출하지 않습니다.
 잘못된 스킴/사용자 정보/80·443 외 포트/입력 형식은 422를 반환합니다.
+
+## 통합 응답의 URL 검사 결과
+- `url_analysis`: 입력 URL의 패턴·브랜드·매장 검사 상세와 `risk_signals`.
+- `final_url_analysis`: 페이지 수집이 성공했고 최종 URL이 바뀐 경우 그 주소의 같은 검사 결과. 이외에는 null.
+- `suspicious_patterns.codes`와 `risk_signals.pattern_codes`: 사람이 읽는 문구와 독립적인 위험 신호 코드.
+- `IP_LITERAL`, `SHORT_URL`, `EXECUTABLE_LINK`, `EXECUTABLE_QUERY`, `USERINFO_IN_URL` 코드를 사용합니다.
+- 통합 API는 사용자 정보가 포함된 URL을 422로 거부합니다. 개별 URL 검사 API는 USERINFO_IN_URL 신호로 보고할 수 있습니다.
+- URL 검사 status=ok는 처리 성공일 뿐 안전 판정이 아닙니다.
+- 로컬 DB 읽기/해석 실패 시 해당 검사는 unknown, URL 검사 status는 partial, errors에는 실패 코드가 반환됩니다.
+- store_data_verified=null은 매장 검사 미수행/조회 실패, false는 조회된 검증 상태가 미검증임을 뜻합니다.
+- 최종 주소의 URL 검사는 추가 HTTP/AI 요청을 하지 않으며 입력 주소와 최종 주소의 신호를 중복 가산하지 않습니다.
 
 ## behavior-v1 점수
 AI는 네 가지 공격 유형을 none/weak/moderate/strong/unknown으로 분류합니다.
@@ -99,6 +116,7 @@ strong은 긴급성/위협/보상/복구 문구 요구/보안 해제 같은 추�
 {
   "score": 75,
   "score_version": "behavior-v1",
+  "score_scope": "ai_behavior_tls_domain_age",
   "assessment_status": "complete",
   "components": {"ai_behavior": 60, "tls": 0, "domain_age": 15},
   "attack_types": [
@@ -109,17 +127,21 @@ strong은 긴급성/위협/보상/복구 문구 요구/보안 해제 같은 추�
   ]
 }
 ```
-이 예시는 전체 응답의 일부입니다. 기존 evidence/reasons/level/auto_open 등도 함께 반환합니다.
+이 예시는 전체 응답의 일부입니다. evidence/reasons/level/auto_open과 url_analysis/final_url_analysis도 함께 반환합니다.
+score_scope=ai_behavior_tls_domain_age: 점수와 level/assessment_status는 기존 AI 행동·TLS·도메인 생성일 범위만 나타냅니다.
+URL·브랜드·매장 신호는 반환하지만 이 점수에는 가산/감산하지 않습니다. URL의 종합 안전 점수로 해석하지 마세요.
+0점/낮음이더라도 url_analysis와 final_url_analysis의 위험 신호 및 조회 상태를 함께 확인해야 합니다.
+URL 신호를 점수에 포함하는 배점·중복 처리 규칙은 별도 점수 버전에서 검증해 적용해야 합니다.
 page.evidence에는 근거 ID·종류·정제된 텍스트가 있습니다. HTML로 렌더링하지 말고 텍스트로 취급하세요.
 reasons에는 합계에 기여한 항목과 points/evidence_ids가 반환됩니다.
 ai_status는 행동 분류 처리 상태입니다. ai_explanation은 호환성을 위한 서버 요약이며 별도 AI 호출이 아닙니다.
 
-- complete: 메타데이터와 네 가지 행동 유형의 정적 검사 완료
+- complete: behavior-v1 메타데이터와 네 가지 행동 유형의 정적 검사 완료
 - partial: 산출한 항목의 점수만 반환. AI 미사용/실패/unknown, 조회 누락, meta refresh 등이 해당
 - failed: 산출 가능한 항목이 없어 score=null. 내부 DNS 차단도 이 상태로 반환 가능
 - null인 구성 점수는 미평가이며 0점과 다릅니다.
 - 50 이상 위험, 20~49 주의. 20 미만은 complete일 때만 낮음, 이외에는 확인 불가.
-- evidence_complete는 메타데이터 조회 완료 여부, analysis_complete는 전체 검사 완료 여부.
+- evidence_complete는 메타데이터 조회 완료 여부, analysis_complete는 behavior-v1 검사 완료 여부. URL 검사의 status와는 별개입니다.
 검사 완료는 정적 검사 범위의 완료를 뜻하며 실제 안전이나 악성 확률을 보증하지 않습니다.
 score/assessment_status/components는 기존 버전과 계약이 달라졌으므로 프론트도 함께 맞추세요.
 
@@ -143,7 +165,8 @@ AI 실패/잘린 응답/없는 근거/부적절한 분류는 사용하지 않고
 공개 운영 전 수집 워커 네트워크 격리·송신 제한·API 인증·요청 제한을 적용하세요.
 휴대폰의 보호는 프론트가 스캔 시 URL 자동 열기/WebView 로딩을 하지 않는다는 전제가 필요합니다.
 사용자가 직접 사이트에 접속한 이후의 동작은 보호 범위가 아닙니다.
-알려진 악성 URL DB, 동적 페이지/실행 파일 분석, 공식 도메인 대조는 포함하지 않습니다.
+브랜드 도메인 대조는 로컬 등록 DB를 사용하며 외부 기관을 통한 공식성 검증은 아닙니다.
+알려진 악성 URL DB, 동적 페이지/실행 파일 분석은 포함하지 않습니다.
 
 ## Expo와 개발 네트워크
 프론트 .env에는 PC Wi-Fi IPv4 주소를 넣습니다.
@@ -171,7 +194,67 @@ LocalSubnet은 로컬 서브넷 범위이며 휴대폰 한 대만 뜻하지 않�
 ## 검증
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
+.\.venv\Scripts\python.exe -m unittest discover -s app/tests -v
 ```
 자동 테스트는 외부 네트워크·유료 API를 모의 응답으로 대체합니다.
 실제 모델 결과는 변경될 수 있으며, 테스트 통과 횟수는 탐지 정확도를 뜻하지 않습니다.
 평가 시 정상 로그인/SSO/다운로드/결제 및 공격·지시문 삽입 사례를 별도로 검증하세요.
+
+## 직접 구별 성능 평가하기
+
+외부 사이트 없이 정답이 있는 정적 HTML 예제 10개(정상 6개·위험 4개)를 평가할 수 있습니다.
+예제는 `tests/fixtures/behavior_cases.json`, 실행 코드는 `scripts/evaluate_behavior.py`에 있습니다.
+기본 명령은 목록만 보여주고 외부 요청을 하지 않습니다. 서버를 켤 필요가 없습니다.
+
+```powershell
+.\.venv\Scripts\python.exe -B -m scripts.evaluate_behavior
+```
+
+실제 `.env`의 BAZE 모델로 평가하려면 다음 명령을 실행합니다. 선택한 사례마다 AI 호출이 발생하며 토큰을 사용합니다.
+
+```powershell
+.\.venv\Scripts\python.exe -B -m scripts.evaluate_behavior --live
+```
+
+특정 정상·위험 사례만 비교해 호출 수를 줄일 수 있습니다.
+
+```powershell
+.\.venv\Scripts\python.exe -B -m scripts.evaluate_behavior --live --case normal_login --case credential_phishing
+```
+
+- `PASS`: 정상 예제에서 네 유형 모두 none이거나, 위험 예제의 지정 공격 유형이 moderate 이상으로 판정됨.
+- `FAIL`: 정상 예제의 오탐, 위험 예제의 미탐·잘못된 유형·강도 부족. 실제 결과를 보고 사례 내용을 함께 검토하세요.
+- `INCONCLUSIVE`: API 실패·unknown 등으로 충분히 평가하지 못함. 정상 판정이나 성공으로 세지 않습니다.
+- `ai_points`: AI 행동 점수(최대 60)만 표시하며 TLS·도메인·URL 패턴 점수는 포함하지 않습니다.
+- `summary.confusion`: TP=위험에서 경고, TN=정상에서 경고 없음, FP=정상인데 경고, FN=위험인데 경고 없음.
+  이 통계는 weak 이상을 경고로 세며, PASS는 지정 공격 유형이 moderate 이상이어야 하므로 TP여도 FAIL일 수 있습니다.
+- `coverage`: 전체 중 네 공격 유형을 모두 평가한 비율. 실패·미확인을 제외한 수치만으로 성능을 과장하지 마세요.
+
+이 명령은 HTML을 분석할 뿐 웹페이지 접속, JavaScript 실행, 폼 제출, 파일 다운로드를 하지 않습니다.
+본인이 만든 새 예제는 JSON에 고유 id, label(benign/malicious), html을 추가하세요.
+malicious 예제에는 expected_attack(credential_theft/personal_data_theft/financial_fraud/unsafe_installation)이 필요합니다.
+--cases 경로로 별도의 평가 파일도 사용할 수 있습니다. HTML의 정제된 내용이 BAZE에 전달되므로 개인정보·비밀키는 넣지 마세요.
+현재 예제는 작은 기능 확인용 세트이며 실제 사이트 탐지 정확도의 추정치가 아닙니다.
+모델은 비결정적일 수 있으므로 실패 사례를 유지하고 표현·언어·정상 서비스 사례를 다양하게 확장하세요.
+
+## Swagger로 URL 연동 확인하기
+
+1. 위 실행 명령으로 백엔드를 켜고 http://127.0.0.1:8000/docs 에 접속합니다.
+2. POST /api/analyze에서 Try it out을 누른 뒤 위 API 예제의 URL을 https://www.python.org로 바꾸어 실행합니다.
+3. inspect_page=true, include_ai=true일 때 page.status와 ai_status, score/components/reasons, url_analysis를 확인합니다.
+4. include_ai=false로 다시 실행하면 ai_behavior=null이어야 합니다. 이 경우 0점/partial도 안전 판정이 아닙니다.
+5. URL 패턴만 검사하려면 POST /api/url/analyze를 사용합니다. 이 경로는 대상 사이트·AI에 접속하지 않습니다.
+
+URL 검사 예제:
+
+| 입력 | 기대 관찰 |
+| --- | --- |
+| https://bit.ly/demo | SHORT_URL |
+| https://example.com/setup.apk | EXECUTABLE_LINK |
+| https://example.com/download?file=setup%252Eapk | EXECUTABLE_QUERY |
+| https://menu.example.com/store/demo-cafe-01?table=3 + store_id=demo-cafe-01 | matched, store_data_verified=false(데모 DB) |
+| https://menu.example.com.evil.example/store/demo-cafe-01 + store_id=demo-cafe-01 | 위장 도메인 의심 |
+
+통합 API에서 https://127.0.0.1은 내부 주소 차단, not-a-url은 422가 기대 결과입니다.
+2번의 URL 신호는 behavior-v1 점수와 별도이므로 실행 파일 링크가 잡혀도 점수가 반드시 올라가지는 않습니다.
+AI의 내용 구별은 위 정답 예제 평가로, 실제 수집과 API 연결은 Swagger로 나누어 확인하세요.
