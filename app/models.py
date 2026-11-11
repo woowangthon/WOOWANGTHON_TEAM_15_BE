@@ -4,6 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from app.behavior import AttackAssessment, AttackType
+from app.url_models import URLAnalysisResponse
 
 CheckStatus = Literal["ok", "unknown", "blocked", "invalid", "not_applicable"]
 
@@ -106,6 +107,9 @@ class AnalyzeResponse(BaseModel):
     evidence: Evidence
     score: int | None = Field(ge=0, le=100)
     score_version: Literal["behavior-v1"]
+    score_scope: Literal["ai_behavior_tls_domain_age"]
+    url_analysis: URLAnalysisResponse
+    final_url_analysis: URLAnalysisResponse | None = None
     assessment_status: Literal["complete", "partial", "failed"]
     components: Components
     attack_types: list[AttackAssessment]
