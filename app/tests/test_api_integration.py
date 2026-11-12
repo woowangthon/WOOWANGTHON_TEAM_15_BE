@@ -28,7 +28,7 @@ class TestAPIIntegration(unittest.TestCase):
 
         # 3. QR 분석 API 호출
         analyze_response = self.client.post(
-            "/api/analyze",
+            "/api/url/analyze",
             json={
                 "qr_text": (
                     "https://menu.example.com/"
@@ -48,13 +48,13 @@ class TestAPIIntegration(unittest.TestCase):
         self.assertEqual(result["store_qr"]["status"], "matched")
         self.assertFalse(result["store_qr"]["is_store_verified"])
 
-    
+
     # 등록되지 않은 매장 QR 분석 테스트
     def test_unknown_store_analysis(self):
 
         # 1. 등록되지 않은 매장 ID로 분석 요청
         response = self.client.post(
-            "/api/analyze",
+            "/api/url/analyze",
             json={
                 "qr_text": "https://example.com/menu",
                 "brand_texts": [],
@@ -79,12 +79,12 @@ class TestAPIIntegration(unittest.TestCase):
             result["store_qr"]["is_store_verified"]
         )
 
-    
+
     # 위험 신호 데이터가 API에서 정상 반환되는지 확인
     def test_risk_signals_response(self):
         # 1. QR 분석 API 요청
         response = self.client.post(
-            "/api/analyze",
+            "/api/url/analyze",
             json={
                 "qr_text": (
                     "https://menu.example.com/"
@@ -114,11 +114,11 @@ class TestAPIIntegration(unittest.TestCase):
         )
         self.assertFalse(signals["redirect_pattern_detected"])
 
-    
+
     # 4. 미등록 매장의 위험 신호 확인
     def test_unknown_store_risk_signals(self):
         response = self.client.post(
-            "/api/analyze",
+            "/api/url/analyze",
             json={
                 "qr_text": "https://example.com/menu",
                 "brand_texts": [],
@@ -147,7 +147,7 @@ class TestAPIIntegration(unittest.TestCase):
     # 5. 잘못된 URL의 위험 신호 확인
     def test_invalid_url_risk_signals(self):
         response = self.client.post(
-            "/api/analyze",
+            "/api/url/analyze",
             json={
                 "qr_text": "not-a-url",
                 "brand_texts": [],
@@ -178,6 +178,23 @@ class TestAPIIntegration(unittest.TestCase):
         self.assertIsNone(
             signals["suspicious_url_pattern"]
         )
+
+
+    def test_analysis_apis_keep_distinct_response_contracts(self):
+        response = self.client.get("/openapi.json")
+        self.assertEqual(response.status_code, 200)
+        schema = response.json()
+        for path, required_fields, excluded_field in [
+            ("/api/analyze", {"score", "components", "assessment_status"}, "risk_signals"),
+            ("/api/url/analyze", {"risk_signals", "store_qr", "url_info"}, "score"),
+        ]:
+            with self.subTest(path=path):
+                operation = schema["paths"][path]["post"]
+                ref = operation["responses"]["200"]["content"]["application/json"]["schema"]["$ref"]
+                fields = schema["components"]["schemas"][ref.rsplit("/", 1)[-1]]["properties"]
+                self.assertTrue(required_fields.issubset(fields))
+                self.assertNotIn(excluded_field, fields)
+        self.assertIn("get", schema["paths"]["/api/stores/search"])
 
 
 if __name__ == "__main__":

@@ -9,7 +9,7 @@ from urllib.parse import urlsplit
 def parse_qr_url(qr_text: str) -> dict:
 
     # 1. URL 길이 확인
-    if len(qr_text) > 2048:
+    if len(qr_text) > 4096:
         return {"valid": False, "reason": "URL이 너무 깁니다."}
 
     # 2. 제어문자 확인 (줄바꿈, 탭 등)

@@ -70,7 +70,7 @@ def verify_store_qr(qr_text: str, store_id: str) -> dict:
         for approved_url in approved_urls
     )
 
-    
+
     # 8. QR 주소 일치 여부와 매장 검증 상태에 따른 설명
     if not is_store_verified:
         if is_matched:

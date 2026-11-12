@@ -15,6 +15,7 @@ def build_risk_signals(analysis: dict) -> dict:
     return {
         "url_valid": url_info.get("valid"),
         "suspicious_url_pattern": suspicious.get("suspicious"),
+        "pattern_codes": list(suspicious.get("codes") or []),
         "brand_domain_status": brand.get("status", "unknown"),
         "store_qr_status": store.get("status", "not_checked"),
         "store_data_verified": store.get("is_store_verified"),

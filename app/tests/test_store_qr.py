@@ -42,7 +42,7 @@ class TestStoreQR(unittest.TestCase):
 
         self.assertEqual(result["status"], "invalid_url")
 
-    
+
     # 5. 테스트용 매장은 주소가 일치해도 인증된 매장이 아님
     def test_unverified_store(self):
         result = verify_store_qr(
@@ -61,7 +61,7 @@ class TestStoreQR(unittest.TestCase):
         # 실제 매장 인증은 되지 않음
         self.assertFalse(result["is_store_verified"])
 
-    
+
     # 6. 허용된 테이블 번호 QR
     def test_allowed_table_qr(self):
         result = verify_store_qr(
@@ -99,7 +99,7 @@ class TestStoreQR(unittest.TestCase):
 
         self.assertEqual(result["status"], "mismatched")
 
-    
+
     # 10. 미검증 매장의 QR 주소가 일치하는 경우
     def test_unverified_matched_reason(self):
         result = verify_store_qr(

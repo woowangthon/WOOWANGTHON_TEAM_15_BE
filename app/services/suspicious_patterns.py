@@ -30,16 +30,19 @@ def check_suspicious_patterns(qr_text: str) -> dict:
         return {
             "valid": False,
             "suspicious": None,
+            "codes": [],
             "reasons": [result["reason"]]
         }
 
     hostname = result["hostname"]
     path = decode_repeatedly(result["path"]).lower()
     reasons = []
+    codes = []
 
     # 2. IP 주소형 URL 검사
     try:
         ipaddress.ip_address(hostname)
+        codes.append("IP_LITERAL")
         reasons.append("IP 주소를 직접 사용하는 URL")
     except ValueError:
         pass
@@ -51,6 +54,7 @@ def check_suspicious_patterns(qr_text: str) -> dict:
     }
 
     if hostname in short_domains:
+        codes.append("SHORT_URL")
         reasons.append("단축 URL 사용")
 
     # 4. 의심스러운 파일 확장자 검사
@@ -61,6 +65,7 @@ def check_suspicious_patterns(qr_text: str) -> dict:
     extension = PurePosixPath(path).suffix
 
     if extension in risky_extensions:
+        codes.append("EXECUTABLE_LINK")
         reasons.append(
             f"실행 또는 설치 파일 링크: {extension}"
         )
@@ -76,6 +81,7 @@ def check_suspicious_patterns(qr_text: str) -> dict:
         extension = PurePosixPath(filename).suffix
 
         if extension in risky_extensions:
+            codes.append("EXECUTABLE_QUERY")
             reasons.append(
                 f"쿼리 매개변수에 실행 또는 설치 파일명 포함: {extension}"
             )
@@ -85,11 +91,13 @@ def check_suspicious_patterns(qr_text: str) -> dict:
     parsed = urlsplit(result["url"])
 
     if parsed.username is not None:
+        codes.append("USERINFO_IN_URL")
         reasons.append("URL에 사용자 정보(@)가 포함됨")
 
     # 7. 결과 반환
     return {
         "valid": True,
         "suspicious": len(reasons) > 0,
+        "codes": codes,
         "reasons": reasons
     }
