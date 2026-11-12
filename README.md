@@ -7,7 +7,9 @@
 1번의 QR/OCR과 4번의 결과 화면·사용자 확인 후 URL 열기는 별도 담당 범위입니다.
 
 ## 실행
+
 Python 3.11 이상, 저장소 루트 PowerShell:
+
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r requirements.txt
@@ -18,8 +20,10 @@ python -m venv .venv
 - http://127.0.0.1:8000/docs : 요청/응답 모델과 실행 가능한 API 문서
 
 ## 설정
+
 .env.example을 참고해 저장소 루트 .env를 설정하세요.
 기존 환경 변수가 .env보다 우선합니다. 변경 후 서버를 재시작하세요.
+
 ```dotenv
 BAZE_API_KEY=your-own-key
 BAZE_BASE_URL=https://factchat-cloud.mindlogic.ai/v1/gateway
@@ -27,25 +31,29 @@ BAZE_MODEL=gpt-6-luna
 GEOIP_DB_PATH=./data/GeoLite2-Country.mmdb
 CORS_ORIGINS=http://localhost:8081
 ```
-키·.env·국가 DB는 Git에 포함되지 않습니다. Expo의 EXPO_PUBLIC_*에 AI 키를 넣지 마세요.
+
+키·.env·국가 DB는 Git에 포함되지 않습니다. Expo의 EXPO*PUBLIC*\*에 AI 키를 넣지 마세요.
 국가 DB 상대 경로는 터미널 위치가 아니라 저장소 루트를 기준으로 해석됩니다.
 키와 Gateway 주소는 같은 BAZE 배포에서 발급된 조합이어야 합니다.
+
 ```powershell
 .\.venv\Scripts\python.exe -m scripts.check_baze
 .\.venv\Scripts\python.exe -m scripts.check_geoip
 ```
+
 첫 명령은 모델 목록만 조회하고, 두 번째는 로컬 DB만 조회합니다.
 국가 DB는 MaxMind GeoLite2 Country MMDB를 별도 확보하고 최신으로 갱신하세요.
 데이터 출처: MaxMind, https://www.maxmind.com . 서비스 배포 시 이용·출처 표시 조건을 확인하세요.
 
 ## URL 패턴·매장 검사 API (2번 담당)
+
 같은 FastAPI 서버에 다음 API를 함께 등록합니다.
 
-| 경로 | 기능 |
-| --- | --- |
-| `POST /api/analyze` | URL·브랜드·매장 검사 + 도메인·TLS·국가 정보 + 선택적 AI 행동 점수 |
-| `POST /api/url/analyze` | URL 패턴·브랜드·매장 QR 비교 및 `risk_signals` |
-| `GET /api/stores/search?keyword=테스트카페` | 등록된 매장 이름 검색 |
+| 경로                                        | 기능                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| `POST /api/analyze`                         | URL·브랜드·매장 검사 + 도메인·TLS·국가 정보 + 선택적 AI 행동 점수 |
+| `POST /api/url/analyze`                     | URL 패턴·브랜드·매장 QR 비교 및 `risk_signals`                    |
+| `GET /api/stores/search?keyword=테스트카페` | 등록된 매장 이름 검색                                             |
 
 URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습니다.
 이 검사는 대상 사이트에 접속하지 않으며 점수를 산정하지 않습니다.
@@ -55,7 +63,9 @@ URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습
 상세 명세는 [위험 신호 데이터 명세](app/docs/risk_signals_contract.md)를 참고하세요.
 
 ## API
+
 POST /api/analyze
+
 ```json
 {
   "qr_text": "https://example.com",
@@ -66,6 +76,7 @@ POST /api/analyze
   "include_explanation": true
 }
 ```
+
 qr_text와 brand_texts는 필수입니다. brand_texts는 공식 도메인 비교에 사용하며 인식한 브랜드가 없으면 []를 보냅니다.
 store_id는 선택 항목이며 매장 검색 결과의 ID를 보냅니다. 생략/null이면 매장 비교는 not_checked입니다.
 QR URL은 최대 4,096자, 브랜드명은 최대 30개, store_id는 최대 128자입니다.
@@ -79,6 +90,7 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 잘못된 스킴/사용자 정보/80·443 외 포트/입력 형식은 422를 반환합니다.
 
 ## 통합 응답의 URL 검사 결과
+
 - `url_analysis`: 입력 URL의 패턴·브랜드·매장 검사 상세와 `risk_signals`.
 - `final_url_analysis`: 페이지 수집이 성공했고 최종 URL이 바뀐 경우 그 주소의 같은 검사 결과. 이외에는 null.
 - `suspicious_patterns.codes`와 `risk_signals.pattern_codes`: 사람이 읽는 문구와 독립적인 위험 신호 코드.
@@ -89,8 +101,34 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 - store_data_verified=null은 매장 검사 미수행/조회 실패, false는 조회된 검증 상태가 미검증임을 뜻합니다.
 - 최종 주소의 URL 검사는 추가 HTTP/AI 요청을 하지 않으며 입력 주소와 최종 주소의 신호를 중복 가산하지 않습니다.
 
+## combined-v1 종합 판정 (`verdict`)
+
+결과 화면 배너와 AI 결과 설명은 응답의 `verdict`를 따릅니다. 기존 `score`/`level`(behavior-v1)은 바꾸지 않고 그대로 반환합니다.
+구현: `app/verdict.py`, 테스트: `tests/test_verdict.py`.
+
+종합 점수 = behavior-v1 구성 점수(AI 행동 ≤60 + TLS ≤25 + 도메인 생성일 ≤15) + 아래 URL 신호 점수, 최대 100.
+
+| 코드                       | 점수 | 조건                                                                                  |
+| -------------------------- | ---- | ------------------------------------------------------------------------------------- |
+| BLOCKED_NAVIGATION         | 50   | navigation_allowed=false (내부망 주소, HTTPS→HTTP 이동 등). 점수와 상관없이 항상 위험 |
+| EXECUTABLE_DOWNLOAD        | 50   | EXECUTABLE_LINK/EXECUTABLE_QUERY 또는 page.download_response                          |
+| BRAND_DOMAIN_MISMATCH      | 50   | brand_domain_status=mismatched                                                        |
+| STORE_DOMAIN_IMPERSONATION | 50   | domain_impersonation_status=impersonation_suspected                                   |
+| STORE_QR_MISMATCH          | 25   | store_qr_status=mismatched (위장 도메인으로 이미 잡히면 중복 가산 안 함)              |
+| SHORT_URL                  | 20   | 단축 URL                                                                              |
+| IP_LITERAL                 | 20   | IP 주소형 URL                                                                         |
+| REDIRECT_PARAMETER         | 20   | redirect_pattern_detected=true                                                        |
+
+- 입력 주소와 최종 이동 주소의 신호는 합쳐서 신호마다 한 번만 더합니다.
+- 50 이상 위험, 20~49 주의, 20 미만은 behavior-v1 assessment_status=complete일 때만 낮음, 그 외 확인 불가.
+- 배점 기준: 그 신호 하나만으로 접속을 말려야 하는 경우(다운로드·사칭·차단)는 단독으로 위험(50), 목적지를 숨기는 신호는 단독으로 주의(20).
+- 해외 IP는 behavior-v1과 같이 0점(정보만 표시)입니다.
+- 이 배점값은 `SIGNAL_POINTS` 한 곳에서 바꿉니다.
+
 ## behavior-v1 점수
+
 AI는 네 가지 공격 유형을 none/weak/moderate/strong/unknown으로 분류합니다.
+
 - credential_theft: 인증정보 탈취
 - personal_data_theft: 개인정보 탈취
 - financial_fraud: 금전 피해 유도
@@ -106,40 +144,50 @@ strong은 긴급성/위협/보상/복구 문구 요구/보안 해제 같은 추�
 현재 근거 검증용 어휘는 한국어·영어 중심입니다. 오탐/미탐 가능성이 있어 평가 데이터로 보정해야 합니다.
 
 최종 점수 = AI 행동 분석(최대 60) + TLS(최대 25) + 도메인 생성일(최대 15).
+
 - 인증서 검증 실패: 25
 - HTTP: 10 (TLS 항목 내 중복 합산 없음)
 - 도메인 생성 30일 미만: 15
 - 30~179일: 5
 - 해외 IP: 0, 국가 정보만 반환
 - IP 주소형/단축 URL/실행 파일 확장자/브랜드 불일치: 이 버전의 점수에서 제외(2번 범위)
-최종 이동 호스트가 바뀌면 원본과 최종 TLS·생성일 중 더 높은 값을 한 번만 사용합니다.
+  최종 이동 호스트가 바뀌면 원본과 최종 TLS·생성일 중 더 높은 값을 한 번만 사용합니다.
 
 주요 응답:
+
 ```json
 {
   "score": 75,
   "score_version": "behavior-v1",
   "score_scope": "ai_behavior_tls_domain_age",
   "assessment_status": "complete",
-  "components": {"ai_behavior": 60, "tls": 0, "domain_age": 15},
+  "components": { "ai_behavior": 60, "tls": 0, "domain_age": 15 },
   "attack_types": [
-    {"type": "credential_theft", "severity": "strong", "evidence_ids": ["page_text_1"]},
-    {"type": "personal_data_theft", "severity": "none", "evidence_ids": []},
-    {"type": "financial_fraud", "severity": "none", "evidence_ids": []},
-    {"type": "unsafe_installation", "severity": "none", "evidence_ids": []}
+    {
+      "type": "credential_theft",
+      "severity": "strong",
+      "evidence_ids": ["page_text_1"]
+    },
+    { "type": "personal_data_theft", "severity": "none", "evidence_ids": [] },
+    { "type": "financial_fraud", "severity": "none", "evidence_ids": [] },
+    { "type": "unsafe_installation", "severity": "none", "evidence_ids": [] }
   ]
 }
 ```
+
 이 예시는 전체 응답의 일부입니다. evidence/reasons/level/auto_open과 url_analysis/final_url_analysis도 함께 반환합니다.
 score_scope=ai_behavior_tls_domain_age: 점수와 level/assessment_status는 기존 AI 행동·TLS·도메인 생성일 범위만 나타냅니다.
 URL·브랜드·매장 신호는 반환하지만 이 점수에는 가산/감산하지 않습니다. URL의 종합 안전 점수로 해석하지 마세요.
 0점/낮음이더라도 url_analysis와 final_url_analysis의 위험 신호 및 조회 상태를 함께 확인해야 합니다.
-URL 신호를 점수에 포함하는 배점·중복 처리 규칙은 별도 점수 버전에서 검증해 적용해야 합니다.
+URL 신호를 점수에 포함하는 배점·중복 처리 규칙은 별도 점수 버전(아래 combined-v1)에서 적용합니다.
 page.evidence에는 근거 ID·종류·정제된 텍스트가 있습니다. HTML로 렌더링하지 말고 텍스트로 취급하세요.
 reasons에는 합계에 기여한 항목과 points/evidence_ids가 반환됩니다.
 ai_status는 행동 분류 처리 상태입니다. ai_explanation은 호환성을 위한 서버 요약이며 별도 AI 호출이 아닙니다.
 explanation은 결과 화면용 설명입니다. explanation_status가 generated/cached이면 AI가 쓴 문장이고, 그 외(disabled/unavailable/skipped)에는 ai_explanation과 같은 규칙 기반 문장입니다.
-navigation_allowed=false(내부망 차단·HTTPS→HTTP 이동 등)이면 설명 AI도 호출하지 않습니다(skipped).
+navigation_allowed=false(내부망 차단·HTTPS→HTTP 이동 등)이면 설명 AI를 호출하지 않습니다(explanation_status=skipped).
+이때 explanation_skip_reason에 AI 설명을 만들지 않은 이유(차단 사유)를 사용자용 문장으로 반환하며, 결과 화면의 AI 설명 칸에 표시합니다.
+AI 키 미설정·시간 초과·잘못된 응답(explanation_status=unavailable)에도 explanation_skip_reason에 안내 문장을 반환합니다.
+include_explanation=false(disabled)이면 null입니다.
 
 TLS 검증은 OS 인증서 저장소 대신 certifi(Mozilla) CA 묶음을 사용합니다. Windows에서 루트 인증서가 아직 내려받아지지 않아
 정상 사이트(example.com, bit.ly 등)가 INVALID_TLS(+25)로 잘못 채점되던 문제를 막기 위함입니다.
@@ -150,10 +198,11 @@ TLS 검증은 OS 인증서 저장소 대신 certifi(Mozilla) CA 묶음을 사용
 - null인 구성 점수는 미평가이며 0점과 다릅니다.
 - 50 이상 위험, 20~49 주의. 20 미만은 complete일 때만 낮음, 이외에는 확인 불가.
 - evidence_complete는 메타데이터 조회 완료 여부, analysis_complete는 behavior-v1 검사 완료 여부. URL 검사의 status와는 별개입니다.
-검사 완료는 정적 검사 범위의 완료를 뜻하며 실제 안전이나 악성 확률을 보증하지 않습니다.
-score/assessment_status/components는 기존 버전과 계약이 달라졌으므로 프론트도 함께 맞추세요.
+  검사 완료는 정적 검사 범위의 완료를 뜻하며 실제 안전이나 악성 확률을 보증하지 않습니다.
+  score/assessment_status/components는 기존 버전과 계약이 달라졌으므로 프론트도 함께 맞추세요.
 
 ## 페이지 수집 보호
+
 - HTTP(S)·80/443만, 사용자 정보/내부·예약 IP/혼합 DNS 차단.
 - 이동마다 DNS 전체를 재검증하고, 검증한 공인 IP에 연결을 고정.
 - 원래 hostname으로 Host/SNI/인증서 검증, HTTPS→HTTP 이동 차단.
@@ -166,8 +215,8 @@ score/assessment_status/components는 기존 버전과 계약이 달라졌으므
 - URL/이메일/긴 숫자열은 제거하나 개인정보를 완벽하게 제거하는 기능은 아님.
 - 수집 HTML은 디스크에 저장하지 않음. 유효한 AI 분류는 10분간 최대 128개 캐시.
 - AI 응답은 JSON 스키마·공격 유형·위험 수준·실제 근거 참조와 지지 어휘로 검증.
-AI 실패/잘린 응답/없는 근거/부적절한 분류는 사용하지 않고 메타데이터 부분 점수를 반환합니다.
-추가 설명용 유료 호출이나 유료 자동 재시도는 하지 않습니다.
+  AI 실패/잘린 응답/없는 근거/부적절한 분류는 사용하지 않고 메타데이터 부분 점수를 반환합니다.
+  추가 설명용 유료 호출이나 유료 자동 재시도는 하지 않습니다.
 
 서버가 제한된 HTTP 요청을 보내는 방식이며 별도 VM/컨테이너 샌드박스는 아닙니다.
 공개 운영 전 수집 워커 네트워크 격리·송신 제한·API 인증·요청 제한을 적용하세요.
@@ -177,33 +226,44 @@ AI 실패/잘린 응답/없는 근거/부적절한 분류는 사용하지 않고
 알려진 악성 URL DB, 동적 페이지/실행 파일 분석은 포함하지 않습니다.
 
 ## Expo와 개발 네트워크
+
 프론트 .env에는 PC Wi-Fi IPv4 주소를 넣습니다.
+
 ```dotenv
 EXPO_PUBLIC_API_URL=http://192.168.0.10:8000
 ```
+
 휴대폰의 localhost는 PC가 아닙니다. PC/휴대폰을 같은 신뢰할 수 있는 Wi-Fi에 연결하세요.
 먼저 휴대폰 브라우저에서 http://PC_IP:8000/health 를 확인합니다.
 CORS_ORIGINS는 Expo Web의 실제 origin을 지정하는 설정입니다.
 
 관리자 PowerShell에서 개발용 규칙 생성:
+
 ```powershell
 New-NetFirewallRule -DisplayName "QRAlert FastAPI 8000" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -Profile Private -RemoteAddress LocalSubnet
 ```
+
 이미 있는 규칙 수정:
+
 ```powershell
 Set-NetFirewallRule -DisplayName "QRAlert FastAPI 8000" -Profile Private -RemoteAddress LocalSubnet
 ```
+
 종료 시 서버 Ctrl+C, 개발용 규칙 제거:
+
 ```powershell
 Remove-NetFirewallRule -DisplayName "QRAlert FastAPI 8000"
 ```
+
 LocalSubnet은 로컬 서브넷 범위이며 휴대폰 한 대만 뜻하지 않습니다. 실제 배포에는 HTTPS 서버를 사용하세요.
 
 ## 검증
+
 ```powershell
 .\.venv\Scripts\python.exe -m unittest discover -s tests -v
 .\.venv\Scripts\python.exe -m unittest discover -s app/tests -v
 ```
+
 자동 테스트는 외부 네트워크·유료 API를 모의 응답으로 대체합니다.
 실제 모델 결과는 변경될 수 있으며, 테스트 통과 횟수는 탐지 정확도를 뜻하지 않습니다.
 평가 시 정상 로그인/SSO/다운로드/결제 및 공격·지시문 삽입 사례를 별도로 검증하세요.
@@ -255,13 +315,13 @@ malicious 예제에는 expected_attack(credential_theft/personal_data_theft/fina
 
 URL 검사 예제:
 
-| 입력 | 기대 관찰 |
-| --- | --- |
-| https://bit.ly/demo | SHORT_URL |
-| https://example.com/setup.apk | EXECUTABLE_LINK |
-| https://example.com/download?file=setup%252Eapk | EXECUTABLE_QUERY |
-| https://menu.example.com/store/demo-cafe-01?table=3 + store_id=demo-cafe-01 | matched, store_data_verified=false(데모 DB) |
-| https://menu.example.com.evil.example/store/demo-cafe-01 + store_id=demo-cafe-01 | 위장 도메인 의심 |
+| 입력                                                                             | 기대 관찰                                   |
+| -------------------------------------------------------------------------------- | ------------------------------------------- |
+| https://bit.ly/demo                                                              | SHORT_URL                                   |
+| https://example.com/setup.apk                                                    | EXECUTABLE_LINK                             |
+| https://example.com/download?file=setup%252Eapk                                  | EXECUTABLE_QUERY                            |
+| https://menu.example.com/store/demo-cafe-01?table=3 + store_id=demo-cafe-01      | matched, store_data_verified=false(데모 DB) |
+| https://menu.example.com.evil.example/store/demo-cafe-01 + store_id=demo-cafe-01 | 위장 도메인 의심                            |
 
 통합 API에서 https://127.0.0.1은 내부 주소 차단, not-a-url은 422가 기대 결과입니다.
 2번의 URL 신호는 behavior-v1 점수와 별도이므로 실행 파일 링크가 잡혀도 점수가 반드시 올라가지는 않습니다.

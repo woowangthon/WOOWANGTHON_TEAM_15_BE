@@ -18,7 +18,7 @@ _cache = OrderedDict()
 SYSTEM_PROMPT = (
     "당신은 QR 코드를 찍은 일반 사용자에게 검사 결과를 알려주는 도우미입니다. "
     "입력 JSON은 서버가 QR 속 주소를 검사한 결과입니다. 이를 바탕으로 휴대폰 화면에 그대로 보여줄 "
-    "쉬운 한국어 해요체 2~3문장을 쓰세요.\n"
+    "쉬운 한국어 해요체(~해요, ~세요) 2~3문장을 쓰세요. '~습니다', '~합니다' 같은 합쇼체는 쓰지 마세요.\n"
     "규칙:\n"
     "1. 화면을 보는 사람에게 직접 말하세요. '사용자', '자동 접속', '시스템', '서버', '검사 결과는' 같은 "
     "내부 표현이나 3인칭 지시문을 쓰지 마세요.\n"
@@ -27,15 +27,33 @@ SYSTEM_PROMPT = (
     "SHORT_URL → 단축 주소, EXECUTABLE_LINK → 앱·실행 파일을 내려받는 주소, "
     "brand_domain_status=mismatched → 상표의 공식 주소와 다름, "
     "domain_impersonation_status=impersonation_suspected → 등록된 매장 주소를 흉내 낸 주소.\n"
-    "3. 입력에 있는 근거만 사용하세요. 위험 신호가 있으면 가장 중요한 이유 1~2개를 먼저 말하세요. "
+    "3. overall은 화면에 표시되는 최종 판정입니다. 말의 강도를 overall.level에 맞추세요. "
+    "위험이면 들어가지 말라고 분명히 권하고, 주의면 확인을 권하고, 낮음이면 큰 위험 신호는 없었다고 말하되 "
+    "안전을 보장하지 마세요. 바깥의 score·level은 일부 항목만 반영한 값이므로 overall과 다르면 overall을 따르세요.\n"
+    "4. 입력에 있는 근거만 사용하세요. 위험 신호가 있으면 overall.reasons 중 가장 중요한 이유 1~2개를 먼저 말하세요. "
     "url_signals(주소 형태·공식 주소 비교·매장 주소 비교)와 page_attacks(페이지가 요구하는 행동)도 근거입니다.\n"
-    "4. 확인하지 못한 항목(unknown 등)을 안전하다는 근거로 쓰지 마세요. "
+    "5. 확인하지 못한 항목(unknown 등)을 안전하다는 근거로 쓰지 마세요. "
     "안전하다거나 사기라고 단정하지 마세요. not_checked인 항목(요청하지 않아 하지 않은 검사)은 언급하지 마세요.\n"
-    "5. 마지막 문장은 사람이 바로 할 수 있는 구체적인 행동 하나로 끝내세요. "
-    "예: 비밀번호·카드번호·인증번호를 입력하지 않기, 파일을 설치하지 않기, "
-    "공식 앱이나 직접 검색한 주소로 들어가기.\n"
-    "6. 링크, 마크다운, 목록 기호, 분석 과정은 출력하지 마세요."
+    "6. 이미 확인된 좋은 결과는 그대로 알려 주고, 같은 것을 다시 확인하라고 하지 마세요. "
+    "brand_domain_status=matched이면 '상표의 공식 주소와 일치해요'라고 말하고, "
+    "'공식 사이트인지 확인하세요'나 '공식 앱이나 직접 검색한 주소로 들어가세요' 같은 말은 하지 마세요. "
+    "store_qr_status=matched나 domain_impersonation_status=host_matched도 마찬가지입니다.\n"
+    "7. 마지막 문장은 남아 있는 위험에 맞는, 바로 할 수 있는 행동 하나로 끝내세요. "
+    "예: 실행 파일 → 파일을 설치하지 않기, 공식 주소와 다름 → 공식 앱이나 직접 검색한 주소로 들어가기, "
+    "보안 연결 없음 → 비밀번호·카드번호를 입력하지 않기. "
+    "남은 위험 신호가 없으면 '평소와 다르게 비밀번호나 결제 정보를 요구하면 입력하지 마세요'처럼 "
+    "들어간 뒤에 조심할 점 하나를 알려 주세요.\n"
+    "8. 링크, 마크다운, 목록 기호, 분석 과정은 출력하지 마세요."
 )
+# Shown in the result screen's AI card when the AI was not called for a blocked target.
+BLOCKED_SKIP_REASONS = {
+    "internal_address": "집·회사 내부 기기를 가리키는 주소라 이 앱에서 막았어요. 막힌 주소는 AI 설명을 만들지 않아요.",
+    "https_to_http_redirect": "보안 연결이 없는 주소로 넘어가려 해서 이 앱에서 막았어요. 막힌 주소는 AI 설명을 만들지 않아요.",
+    "unsafe_redirect": "안전하지 않은 주소로 넘어가려 해서 이 앱에서 막았어요. 막힌 주소는 AI 설명을 만들지 않아요.",
+    "redirect_to_internal_address": "내부 기기 주소로 넘어가려 해서 이 앱에서 막았어요. 막힌 주소는 AI 설명을 만들지 않아요.",
+}
+# Shown in the AI card when the AI could not be reached (not configured, timeout, bad response).
+AI_UNAVAILABLE_REASON = "지금은 AI 설명을 만들 수 없어요. 위 판정과 검사 항목을 확인해 주세요."
 # Only status codes are forwarded: no hostname, path, QR/brand text or store name.
 URL_SIGNAL_KEYS = ("pattern_codes", "brand_domain_status", "store_qr_status",
                    "domain_impersonation_status", "redirect_pattern_detected")
@@ -67,7 +85,21 @@ def summary_for_ai(result):
                if a.get("severity") not in {"none", "unknown"}]
     if attacks:
         summary["page_attacks"] = attacks
+    verdict = result.get("verdict")
+    if verdict:
+        summary["overall"] = {"level": verdict["level"],
+                              "reasons": [{"code": r["code"], "message": r["message"]} for r in verdict["reasons"]]}
     return summary
+
+
+def blocked_kind(result):
+    """Why the target was blocked, as a fixed category."""
+    if (result.get("evidence") or {}).get("dns", {}).get("status") == "blocked":
+        return "internal_address"
+    page = result.get("page") or {}
+    if page.get("status") == "blocked":
+        return "https_to_http_redirect" if "HTTPS에서 HTTP" in (page.get("reason") or "") else "unsafe_redirect"
+    return "redirect_to_internal_address"
 
 
 async def explain_result(result, enabled=True):
@@ -75,12 +107,13 @@ async def explain_result(result, enabled=True):
     if not enabled:
         return fallback
     if not result["navigation_allowed"]:
-        return {**fallback, "ai_status": "skipped"}
+        # No AI call for blocked targets; the screen shows why instead.
+        return {**fallback, "ai_status": "skipped", "skip_reason": BLOCKED_SKIP_REASONS[blocked_kind(result)]}
     settings = baze_settings()
     base = urlsplit(settings["base_url"])
     if (not settings["api_key"] or not settings["model"] or base.scheme != "https"
             or not base.hostname or base.username or base.password or base.query or base.fragment):
-        return {**fallback, "ai_status": "unavailable"}
+        return {**fallback, "ai_status": "unavailable", "skip_reason": AI_UNAVAILABLE_REASON}
 
     summary = json.dumps(summary_for_ai(result), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     # Prompt is part of the key so a prompt change never serves explanations written under the old one.
@@ -120,7 +153,7 @@ async def explain_result(result, enabled=True):
         text = await asyncio.wait_for(generate(), timeout=12)
     except (httpx.HTTPError, TimeoutError, ValueError, KeyError, IndexError, TypeError):
         # Do not log upstream responses or authorization headers.
-        return {**fallback, "ai_status": "unavailable"}
+        return {**fallback, "ai_status": "unavailable", "skip_reason": AI_UNAVAILABLE_REASON}
 
     _cache[cache_key] = (time.monotonic() + CACHE_TTL, text)
     while len(_cache) > CACHE_LIMIT:

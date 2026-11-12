@@ -13,6 +13,7 @@ from app.models import AnalyzeResponse
 from app.page_analysis import inspect_page
 from app.routers.url_analysis import router as url_analysis_router
 from app.services.url_analysis import analyze_url_signals
+from app.verdict import combined_verdict
 
 app = FastAPI(title="QR Alert API", version="0.6.0")
 origins = [s.strip() for s in os.getenv("CORS_ORIGINS", "").split(",") if s.strip()]
@@ -74,6 +75,8 @@ async def analyze(request: AnalyzeRequest):
         "ai_model": ai_model,
         "ai_explanation": fallback_text(result),
     }
+    # Overall verdict (combined-v1) adds URL/brand/store signals on top of behavior-v1.
+    response["verdict"] = combined_verdict(response)
     # The explanation only rewords the finished result; it never changes score, level or signals.
     explained = await explain_result(response, enabled=request.include_ai and request.include_explanation)
     return {
@@ -81,6 +84,7 @@ async def analyze(request: AnalyzeRequest):
         "explanation": explained["ai_explanation"],
         "explanation_status": explained["ai_status"],
         "explanation_model": explained["ai_model"],
+        "explanation_skip_reason": explained.get("skip_reason"),
     }
 
 

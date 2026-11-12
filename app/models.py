@@ -101,6 +101,20 @@ class PageReport(BaseModel):
     ai_explanation: str | None = None
 
 
+class VerdictReason(BaseModel):
+    code: str
+    points: int
+    message: str
+
+
+class Verdict(BaseModel):
+    """combined-v1 overall verdict (app/verdict.py): behavior-v1 points + URL/brand/store signals."""
+    version: Literal["combined-v1"]
+    score: int | None = Field(ge=0, le=100)
+    level: Literal["낮음", "주의", "위험", "확인 불가"]
+    reasons: list[VerdictReason]
+
+
 class AnalyzeResponse(BaseModel):
     url: str
     hostname: str
@@ -130,3 +144,8 @@ class AnalyzeResponse(BaseModel):
     explanation: str
     explanation_status: Literal["generated", "cached", "disabled", "unavailable", "skipped"]
     explanation_model: str | None = None
+    # Why no AI explanation was made, for the AI card: set when explanation_status is skipped (blocked target)
+    # or unavailable (AI not configured, timeout, invalid response). None when disabled or generated.
+    explanation_skip_reason: str | None = None
+    # Overall verdict for the result screen. score/level above stay behavior-v1 for compatibility.
+    verdict: Verdict
