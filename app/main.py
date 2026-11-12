@@ -8,7 +8,7 @@ from pydantic import BaseModel, Field
 
 from app import config  # Load backend-local .env before reading settings.
 from app.security import analyze_url, parse_url
-from app.ai import fallback_text
+from app.ai import explain_result, fallback_text
 from app.models import AnalyzeResponse
 from app.page_analysis import inspect_page
 from app.routers.url_analysis import router as url_analysis_router
@@ -31,6 +31,7 @@ class AnalyzeRequest(BaseModel):
     inspect_page: bool = Field(default=False, description="대상 사이트에 제한된 GET 요청을 보내 정적 HTML을 분석합니다.")
     brand_texts: list[str] = Field(max_length=30, description="OCR 등으로 인식한 브랜드명. URL의 공식 도메인 비교에 사용")
     store_id: str | None = Field(default=None, min_length=1, max_length=128, description="매장 검색 결과의 ID. 생략하면 매장 검사를 수행하지 않음")
+    include_explanation: bool = Field(default=False, description="검사 결과를 쉬운 문장으로 설명하는 AI 호출 여부. include_ai=false이면 호출하지 않음")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -63,7 +64,7 @@ async def analyze(request: AnalyzeRequest):
         ai_status = "skipped" if request.include_ai else "disabled"
         ai_model = None
     # behavior-v1 stays reproducible: task-2 observations do not add/subtract points.
-    return {
+    response = {
         **result,
         "url_analysis": local,
         "final_url_analysis": final_local,
@@ -72,6 +73,14 @@ async def analyze(request: AnalyzeRequest):
         "ai_status": ai_status,
         "ai_model": ai_model,
         "ai_explanation": fallback_text(result),
+    }
+    # The explanation only rewords the finished result; it never changes score, level or signals.
+    explained = await explain_result(response, enabled=request.include_ai and request.include_explanation)
+    return {
+        **response,
+        "explanation": explained["ai_explanation"],
+        "explanation_status": explained["ai_status"],
+        "explanation_model": explained["ai_model"],
     }
 
 

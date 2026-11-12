@@ -1,12 +1,12 @@
 """Bounded, DNS-pinned HTML GETs. No browser, JS, subresources, cookies or form submission."""
 import asyncio
 import socket
-import ssl
 from urllib.parse import unquote, urljoin, urlsplit
 
 import aiohttp
 from aiohttp.abc import AbstractResolver
 
+from app.config import tls_context
 from app.security import DOWNLOADS, parse_url, public_ip, resolve
 
 MAX_BYTES = 256 * 1024
@@ -38,7 +38,7 @@ async def request_html(url, hostname, port, addresses):
     """Return headers/body only; caller manually validates every redirect."""
     connector = aiohttp.TCPConnector(
         resolver=PinnedResolver(hostname, addresses), use_dns_cache=False,
-        force_close=True, limit=1, ssl=ssl.create_default_context(),
+        force_close=True, limit=1, ssl=tls_context(),
     )
     async with aiohttp.ClientSession(
         connector=connector, cookie_jar=aiohttp.DummyCookieJar(), trust_env=False,

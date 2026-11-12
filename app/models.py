@@ -125,3 +125,8 @@ class AnalyzeResponse(BaseModel):
     ai_status: Literal["generated", "cached", "disabled", "unavailable", "skipped"]
     ai_model: str | None
     page: PageReport | None = None
+    # Plain-language summary for the result screen. AI-written only when explanation_status is
+    # generated/cached; otherwise it is the same rule-based text as ai_explanation.
+    explanation: str
+    explanation_status: Literal["generated", "cached", "disabled", "unavailable", "skipped"]
+    explanation_model: str | None = None

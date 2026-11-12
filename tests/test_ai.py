@@ -94,7 +94,43 @@ class APIAITests(unittest.TestCase):
             self.assertEqual(payload["level"], RESULT["level"])
             self.assertEqual(payload["ai_status"], "disabled")
             self.assertFalse(payload["auto_open"])
+            self.assertEqual(payload["explanation_status"], "disabled")
+            self.assertEqual(payload["explanation"], payload["ai_explanation"])
             post.assert_not_called()
+
+    def test_explanation_is_opt_in(self):
+        with patch("app.main.analyze_url", AsyncMock(return_value=copy.deepcopy(RESULT))), \
+             patch("app.ai.baze_settings", return_value=SETTINGS), \
+             patch("httpx.AsyncClient.post", AsyncMock()) as post, TestClient(app) as client:
+            payload = client.post("/api/analyze", json={"qr_text": RESULT["url"], "brand_texts": []}).json()
+            self.assertEqual(payload["explanation_status"], "disabled")
+            post.assert_not_called()
+
+    def test_api_explanation_includes_url_signals_without_url_text(self):
+        _cache.clear()
+        text = "단축 URL이라 실제 목적지를 알 수 없고, 실행 파일을 내려받게 합니다. 접속 전 확인하세요."
+        response = httpx.Response(200, request=httpx.Request("POST", SETTINGS["base_url"]),
+                                 json={"choices": [{"finish_reason": "stop", "message": {"content": text}}]})
+        url = "https://bit.ly/private-path/setup.apk?token=private-secret"
+        metadata = {**copy.deepcopy(RESULT), "url": url, "hostname": "bit.ly"}
+        with patch("app.main.analyze_url", AsyncMock(return_value=metadata)), \
+             patch("app.ai.baze_settings", return_value=SETTINGS), \
+             patch("httpx.AsyncClient.post", AsyncMock(return_value=response)) as post, TestClient(app) as client:
+            payload = client.post("/api/analyze", json={
+                "qr_text": url, "brand_texts": ["테스트브랜드"], "include_explanation": True}).json()
+        self.assertEqual(payload["explanation_status"], "generated")
+        self.assertEqual(payload["explanation"], text)
+        self.assertEqual(payload["explanation_model"], SETTINGS["model"])
+        # The explanation never changes the scored result.
+        self.assertEqual(payload["score"], RESULT["score"])
+        self.assertEqual(payload["level"], RESULT["level"])
+        self.assertEqual(post.await_count, 1)
+        sent = json.loads(post.call_args.kwargs["json"]["messages"][1]["content"])
+        self.assertEqual(sent["url_signals"]["pattern_codes"], ["SHORT_URL", "EXECUTABLE_LINK"])
+        self.assertEqual(sent["url_signals"]["brand_domain_status"], "mismatched")
+        serialized = json.dumps(post.call_args.kwargs["json"], ensure_ascii=False)
+        for value in ["bit.ly", "private-path", "private-secret", "테스트브랜드", "test-only-key", "8.8.8.8"]:
+            self.assertNotIn(value, serialized)
 
 
 if __name__ == "__main__":

@@ -62,7 +62,8 @@ POST /api/analyze
   "brand_texts": [],
   "store_id": null,
   "include_ai": true,
-  "inspect_page": true
+  "inspect_page": true,
+  "include_explanation": true
 }
 ```
 qr_text와 brand_texts는 필수입니다. brand_texts는 공식 도메인 비교에 사용하며 인식한 브랜드가 없으면 []를 보냅니다.
@@ -71,7 +72,9 @@ QR URL은 최대 4,096자, 브랜드명은 최대 30개, store_id는 최대 128�
 기본 URL 검증과 로컬 URL 검사가 통과한 뒤 DNS·페이지 수집·AI 호출을 진행합니다.
 include_ai 기본값 true, inspect_page 기본값 false.
 본문 분석에는 inspect_page=true가 필요합니다.
-inspect_page=false이면 대상 페이지의 HTTP 요청과 유료 AI 호출을 하지 않습니다.
+inspect_page=false이면 대상 페이지의 HTTP 요청과 유료 AI 행동 분류 호출을 하지 않습니다.
+include_explanation 기본값 false. true이고 include_ai=true이면 완성된 검사 결과를 쉬운 문장으로 설명하는 AI 호출을 1회 추가합니다(10분 캐시).
+설명 AI에는 점수·등급·근거 코드·검사 상태·URL 신호 코드만 보내며 URL·호스트명·상표명·매장명은 보내지 않습니다. 설명은 점수와 등급을 바꾸지 않습니다.
 include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산출하지 않습니다.
 잘못된 스킴/사용자 정보/80·443 외 포트/입력 형식은 422를 반환합니다.
 
@@ -135,6 +138,11 @@ URL 신호를 점수에 포함하는 배점·중복 처리 규칙은 별도 점�
 page.evidence에는 근거 ID·종류·정제된 텍스트가 있습니다. HTML로 렌더링하지 말고 텍스트로 취급하세요.
 reasons에는 합계에 기여한 항목과 points/evidence_ids가 반환됩니다.
 ai_status는 행동 분류 처리 상태입니다. ai_explanation은 호환성을 위한 서버 요약이며 별도 AI 호출이 아닙니다.
+explanation은 결과 화면용 설명입니다. explanation_status가 generated/cached이면 AI가 쓴 문장이고, 그 외(disabled/unavailable/skipped)에는 ai_explanation과 같은 규칙 기반 문장입니다.
+navigation_allowed=false(내부망 차단·HTTPS→HTTP 이동 등)이면 설명 AI도 호출하지 않습니다(skipped).
+
+TLS 검증은 OS 인증서 저장소 대신 certifi(Mozilla) CA 묶음을 사용합니다. Windows에서 루트 인증서가 아직 내려받아지지 않아
+정상 사이트(example.com, bit.ly 등)가 INVALID_TLS(+25)로 잘못 채점되던 문제를 막기 위함입니다.
 
 - complete: behavior-v1 메타데이터와 네 가지 행동 유형의 정적 검사 완료
 - partial: 산출한 항목의 점수만 반환. AI 미사용/실패/unknown, 조회 누락, meta refresh 등이 해당

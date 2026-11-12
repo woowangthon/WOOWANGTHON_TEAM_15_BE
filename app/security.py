@@ -11,7 +11,7 @@ import httpx
 import maxminddb
 import tldextract
 
-from app.config import geoip_database_path
+from app.config import geoip_database_path, tls_context
 from app.scoring import score_metadata
 
 EXTRACT = tldextract.TLDExtract(suffix_list_urls=(), cache_dir=None)
@@ -76,7 +76,7 @@ async def tls_check(host, ip, port):
     try:
         # Connect to the previously validated IP; retain original hostname for SNI/verification.
         _, writer = await asyncio.wait_for(asyncio.open_connection(
-            ip, port, ssl=ssl.create_default_context(), server_hostname=host,
+            ip, port, ssl=tls_context(), server_hostname=host,
             ssl_handshake_timeout=TIMEOUT), TIMEOUT + 1)
         tls = writer.get_extra_info("ssl_object")
         cert = tls.getpeercert()
