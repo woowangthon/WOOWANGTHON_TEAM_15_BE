@@ -2,6 +2,7 @@
 import asyncio
 import hashlib
 import json
+import re
 import time
 from collections import OrderedDict
 from urllib.parse import urlsplit
@@ -58,6 +59,27 @@ AI_UNAVAILABLE_REASON = "지금은 AI 설명을 만들 수 없어요. 위 판정
 URL_SIGNAL_KEYS = ("pattern_codes", "brand_domain_status", "store_qr_status",
                    "domain_impersonation_status", "redirect_pattern_detected")
 
+# Output filter: an explanation that breaks the prompt rules is dropped (shown as AI_UNAVAILABLE_REASON).
+# Each entry is (problem code, pattern). Kept narrow so normal advice like "위험할 수 있어요" passes.
+BANNED_PATTERNS = (
+    ("INTERNAL_WORDING", re.compile(r"사용자|자동\s*접속|자동으로\s*접속|시스템|서버")),
+    ("GRADE_OR_SCORE", re.compile(r"등급|확인\s*불가|점수|\d+\s*점")),
+    ("TECH_TERM", re.compile(r"DNS|RDAP|TLS|SSL|GeoIP|geoip|WHOIS|[A-Z]{2,}_[A-Z_]+|[a-z]+_[a-z_]+")),
+    ("FORMAL_ENDING", re.compile(r"(니다|니까)(?=[.!?\s]|$)")),
+    ("LINK_OR_MARKDOWN", re.compile(r"https?://|www\.|\*\*|^\s*[-*•]\s|^\s*#", re.M)),
+)
+# Asking to double-check something the server already confirmed (e.g. brand matched).
+RECHECK_CONFIRMED = re.compile(r"공식\s*(사이트|주소|도메인)인지|공식\s*앱이나\s*직접\s*검색")
+
+
+def explanation_problems(text, summary):
+    """Return rule-violation codes for an AI explanation; empty means it can be shown."""
+    problems = [code for code, pattern in BANNED_PATTERNS if pattern.search(text)]
+    signals = summary.get("url_signals") or {}
+    if signals.get("brand_domain_status") == "matched" and RECHECK_CONFIRMED.search(text):
+        problems.append("RECHECK_CONFIRMED")
+    return problems
+
 
 def fallback_text(result):
     reasons = [r["message"] for r in result["reasons"][:3]]
@@ -102,6 +124,32 @@ def blocked_kind(result):
     return "redirect_to_internal_address"
 
 
+async def request_explanation(settings, summary):
+    """One raw AI call, before the output filter. Raises on HTTP errors or incomplete responses.
+    Used by explain_result and by scripts/check_explanations.py (which needs the unfiltered text)."""
+    body = {
+        "model": settings["model"],
+        "messages": [{"role": "system", "content": SYSTEM_PROMPT},
+                     {"role": "user", "content": summary}],
+        "max_tokens": 512,
+        "stream": False,
+    }
+    if settings["model"].startswith("gpt-"):
+        body["reasoning_effort"] = "low"
+    async with httpx.AsyncClient(timeout=10, follow_redirects=False, trust_env=False) as client:
+        response = await client.post(
+            settings["base_url"] + "/chat/completions/",
+            headers={"Authorization": "Bearer " + settings["api_key"]},
+            json=body,
+        )
+        response.raise_for_status()
+        choice = response.json()["choices"][0]
+        text = choice["message"]["content"]
+        if choice.get("finish_reason") != "stop" or not isinstance(text, str) or not text.strip() or len(text) > 600:
+            raise ValueError("Incomplete or invalid explanation")
+        return text.strip()
+
+
 async def explain_result(result, enabled=True):
     fallback = {"ai_explanation": fallback_text(result), "ai_status": "disabled", "ai_model": None}
     if not enabled:
@@ -115,7 +163,8 @@ async def explain_result(result, enabled=True):
             or not base.hostname or base.username or base.password or base.query or base.fragment):
         return {**fallback, "ai_status": "unavailable", "skip_reason": AI_UNAVAILABLE_REASON}
 
-    summary = json.dumps(summary_for_ai(result), ensure_ascii=False, separators=(",", ":"), sort_keys=True)
+    summary_data = summary_for_ai(result)
+    summary = json.dumps(summary_data, ensure_ascii=False, separators=(",", ":"), sort_keys=True)
     # Prompt is part of the key so a prompt change never serves explanations written under the old one.
     fingerprint = json.dumps([settings["api_key"], settings["base_url"], settings["model"], SYSTEM_PROMPT, summary])
     cache_key = hashlib.sha256(fingerprint.encode()).hexdigest()
@@ -125,29 +174,12 @@ async def explain_result(result, enabled=True):
         return {"ai_explanation": cached[1], "ai_status": "cached", "ai_model": settings["model"]}
     _cache.pop(cache_key, None)
 
-    body = {
-        "model": settings["model"],
-        "messages": [{"role": "system", "content": SYSTEM_PROMPT},
-                     {"role": "user", "content": summary}],
-        "max_tokens": 512,
-        "stream": False,
-    }
-    if settings["model"].startswith("gpt-"):
-        body["reasoning_effort"] = "low"
-
     async def generate():
-        async with httpx.AsyncClient(timeout=10, follow_redirects=False, trust_env=False) as client:
-            response = await client.post(
-                settings["base_url"] + "/chat/completions/",
-                headers={"Authorization": "Bearer " + settings["api_key"]},
-                json=body,
-            )
-            response.raise_for_status()
-            choice = response.json()["choices"][0]
-            text = choice["message"]["content"]
-            if choice.get("finish_reason") != "stop" or not isinstance(text, str) or not text.strip() or len(text) > 600:
-                raise ValueError("Incomplete or invalid explanation")
-            return text.strip()
+        text = await request_explanation(settings, summary)
+        # Rule-breaking wording is never shown or cached; the screen gets AI_UNAVAILABLE_REASON instead.
+        if explanation_problems(text, summary_data):
+            raise ValueError("Explanation breaks output rules")
+        return text
 
     try:
         text = await asyncio.wait_for(generate(), timeout=12)

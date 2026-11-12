@@ -34,7 +34,7 @@ class AITests(unittest.IsolatedAsyncioTestCase):
     async def test_minimal_payload_and_cache(self):
         original = copy.deepcopy(RESULT)
         response = httpx.Response(200, request=httpx.Request("POST", SETTINGS["base_url"]),
-                                 json={"choices": [{"finish_reason": "stop", "message": {"content": "생성된 지 얼마 안 된 도메인입니다. 접속 전 확인하세요."}}]})
+                                 json={"choices": [{"finish_reason": "stop", "message": {"content": "만들어진 지 얼마 안 된 주소예요. 들어가기 전에 확인하세요."}}]})
         with patch("app.ai.baze_settings", return_value=SETTINGS), patch("httpx.AsyncClient.post", AsyncMock(return_value=response)) as post:
             first = await explain_result(RESULT)
             second = await explain_result(RESULT)
@@ -131,7 +131,7 @@ class APIAITests(unittest.TestCase):
 
     def test_api_explanation_includes_url_signals_without_url_text(self):
         _cache.clear()
-        text = "단축 URL이라 실제 목적지를 알 수 없고, 실행 파일을 내려받게 합니다. 접속 전 확인하세요."
+        text = "단축 주소라 실제 목적지를 알 수 없고, 실행 파일을 내려받게 해요. 파일을 설치하지 마세요."
         response = httpx.Response(200, request=httpx.Request("POST", SETTINGS["base_url"]),
                                  json={"choices": [{"finish_reason": "stop", "message": {"content": text}}]})
         url = "https://bit.ly/private-path/setup.apk?token=private-secret"

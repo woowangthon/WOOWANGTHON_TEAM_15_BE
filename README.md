@@ -189,6 +189,24 @@ navigation_allowed=false(내부망 차단·HTTPS→HTTP 이동 등)이면 설명
 AI 키 미설정·시간 초과·잘못된 응답(explanation_status=unavailable)에도 explanation_skip_reason에 안내 문장을 반환합니다.
 include_explanation=false(disabled)이면 null입니다.
 
+AI 설명 출력 필터(`app/ai.py`의 `explanation_problems`): AI 문장이 아래 규칙을 어기면 화면에 보내지 않고 캐시하지 않으며,
+explanation_status=unavailable과 안내 문장으로 대신합니다.
+- INTERNAL_WORDING: 사용자·자동 접속·시스템·서버 같은 내부 표현
+- GRADE_OR_SCORE: 등급·확인 불가·점수·"N점"
+- TECH_TERM: DNS·TLS·RDAP·GeoIP 같은 기술 용어, SHORT_URL·brand_domain_status 같은 코드 이름
+- FORMAL_ENDING: "~습니다/~니다" 합쇼체
+- LINK_OR_MARKDOWN: 링크·마크다운·목록 기호
+- RECHECK_CONFIRMED: 공식 도메인이 일치했는데 "공식 사이트인지 확인"·"공식 앱이나 직접 검색"을 권하는 문장
+
+프롬프트를 바꾼 뒤에는 정해진 사례로 설명 문장을 확인하세요. 사례는 `tests/fixtures/explanation_cases.json`입니다.
+```powershell
+.\.venv\Scripts\python.exe -B -m scripts.check_explanations            # 사례 목록만 (요청 없음)
+.\.venv\Scripts\python.exe -B -m scripts.check_explanations --live --repeat 2
+.\.venv\Scripts\python.exe -B -m scripts.check_explanations --live --case naver_brand --repeat 3
+```
+--live는 실제 사이트 조회와 유료 AI 호출(사례마다 페이지 분석 1회 + 설명 repeat회)을 합니다. 필터 적용 전 원문과 어긴 규칙,
+종합 판정이 기대 등급과 같은지를 보여줍니다. 판정은 외부 조회 결과에 따라 실행마다 달라질 수 있습니다.
+
 TLS 검증은 OS 인증서 저장소 대신 certifi(Mozilla) CA 묶음을 사용합니다. Windows에서 루트 인증서가 아직 내려받아지지 않아
 정상 사이트(example.com, bit.ly 등)가 INVALID_TLS(+25)로 잘못 채점되던 문제를 막기 위함입니다.
 
