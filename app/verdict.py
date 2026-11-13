@@ -22,6 +22,8 @@ SIGNAL_POINTS = {
     "BRAND_DOMAIN_MISMATCH": (50, "상표의 공식 도메인과 다른 주소입니다."),
     "STORE_DOMAIN_IMPERSONATION": (50, "등록된 매장 주소를 흉내 낸 도메인입니다."),
     "STORE_QR_MISMATCH": (25, "등록된 매장 QR 주소와 다릅니다."),
+    # 주의 alone: a fake sticker on a genuine poster, but ordering/booking platforms also differ legitimately.
+    "PRINTED_DOMAIN_MISMATCH": (25, "QR 주변에 인쇄된 주소와 QR 주소가 다릅니다."),
     "SHORT_URL": (20, "단축 URL이라 실제 목적지를 숨길 수 있습니다."),
     "IP_LITERAL": (20, "도메인 대신 IP 주소를 사용합니다."),
     "REDIRECT_PARAMETER": (20, "다른 사이트로 넘겨주는 매개변수가 있습니다."),
@@ -59,6 +61,8 @@ def combined_verdict(result):
         codes.add("EXECUTABLE_DOWNLOAD")
     if not result.get("navigation_allowed", True):
         codes.add("BLOCKED_NAVIGATION")
+    if (result.get("printed_domain_check") or {}).get("status") == "mismatched":
+        codes.add("PRINTED_DOMAIN_MISMATCH")
     if "STORE_DOMAIN_IMPERSONATION" in codes:
         codes.discard("STORE_QR_MISMATCH")
 

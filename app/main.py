@@ -1,6 +1,6 @@
 import asyncio
 import os
-from typing import Literal
+from typing import Annotated, Literal
 
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
@@ -9,9 +9,11 @@ from pydantic import BaseModel, Field
 from app import config  # Load backend-local .env before reading settings.
 from app.security import analyze_url, parse_url
 from app.ai import explain_result, fallback_text
+from app.brand_ocr import read_brands
 from app.models import AnalyzeResponse
 from app.page_analysis import inspect_page
 from app.routers.url_analysis import router as url_analysis_router
+from app.services.printed_domain import compare_printed_domains
 from app.services.url_analysis import analyze_url_signals
 from app.verdict import combined_verdict
 
@@ -33,6 +35,9 @@ class AnalyzeRequest(BaseModel):
     brand_texts: list[str] = Field(max_length=30, description="OCR 등으로 인식한 브랜드명. URL의 공식 도메인 비교에 사용")
     store_id: str | None = Field(default=None, min_length=1, max_length=128, description="매장 검색 결과의 ID. 생략하면 매장 검사를 수행하지 않음")
     include_explanation: bool = Field(default=False, description="검사 결과를 쉬운 문장으로 설명하는 AI 호출 여부. include_ai=false이면 호출하지 않음")
+    printed_domains: list[Annotated[str, Field(max_length=253)]] = Field(
+        default_factory=list, max_length=10,
+        description="QR 주변에 인쇄된 웹 주소(사진 OCR 결과). QR 주소와 같은 사이트인지 비교. 생략하면 비교하지 않음")
 
 
 @app.get("/health", response_model=HealthResponse)
@@ -74,6 +79,9 @@ async def analyze(request: AnalyzeRequest):
         "ai_status": ai_status,
         "ai_model": ai_model,
         "ai_explanation": fallback_text(result),
+        # Printed address next to the QR vs the QR's own (and final) address: catches fake QR stickers.
+        "printed_domain_check": compare_printed_domains(
+            [url, final_local["url_info"]["url"] if final_local else None], request.printed_domains),
     }
     # Overall verdict (combined-v1) adds URL/brand/store signals on top of behavior-v1.
     response["verdict"] = combined_verdict(response)
@@ -86,6 +94,34 @@ async def analyze(request: AnalyzeRequest):
         "explanation_model": explained["ai_model"],
         "explanation_skip_reason": explained.get("skip_reason"),
     }
+
+
+class BrandOCRRequest(BaseModel):
+    # ~3MB image after base64 (4/3 overhead) plus a possible data: prefix.
+    image_base64: str = Field(min_length=16, max_length=4_300_000, description="상표가 보이는 사진(JPG/PNG/WebP, 3MB 이하)의 base64")
+
+
+class BrandCandidate(BaseModel):
+    name: str
+    registered: bool = Field(description="공식 도메인 DB에 있는 상표명이면 true (비교 가능)")
+
+
+class PrintedDomain(BaseModel):
+    text: str = Field(description="사진에 인쇄된 그대로의 주소")
+    domain: str = Field(description="비교에 쓰는 등록 도메인 (예: starbucks.co.kr)")
+
+
+class BrandOCRResponse(BaseModel):
+    status: Literal["ok", "unavailable", "invalid_image"]
+    brands: list[BrandCandidate]
+    domains: list[PrintedDomain] = Field(default_factory=list)
+    message: str | None = None
+
+
+@app.post("/api/ocr/brands", response_model=BrandOCRResponse)
+async def ocr_brands(request: BrandOCRRequest):
+    # Photo goes to the AI gateway once and is not stored, logged or cached.
+    return await read_brands(request.image_base64)
 
 
 app.include_router(url_analysis_router)

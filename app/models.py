@@ -115,6 +115,12 @@ class Verdict(BaseModel):
     reasons: list[VerdictReason]
 
 
+class PrintedDomainCheck(BaseModel):
+    status: Literal["matched", "mismatched", "not_checked"]
+    printed: list[str] = Field(default_factory=list, description="비교한 인쇄 주소의 등록 도메인")
+    qr_domain: str | None = None
+
+
 class AnalyzeResponse(BaseModel):
     url: str
     hostname: str
@@ -149,3 +155,5 @@ class AnalyzeResponse(BaseModel):
     explanation_skip_reason: str | None = None
     # Overall verdict for the result screen. score/level above stay behavior-v1 for compatibility.
     verdict: Verdict
+    # Web address printed next to the QR (from a photo) vs the QR's address. not_checked when none sent.
+    printed_domain_check: PrintedDomainCheck
