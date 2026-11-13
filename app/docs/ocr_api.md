@@ -3,7 +3,7 @@
 ## 흐름
 
 1. 앱에서 QR 주변의 상표 글자가 포함된 JPEG/PNG 사진을 확보합니다. QR 문자열만으로 사진을 복원할 수 없습니다.
-2. `POST /api/ocr/brands`에 multipart/form-data의 **image** 파일로 전송합니다.
+2. `POST /api/ocr/brands/local`에 multipart/form-data의 **image** 파일로 전송합니다.
 3. 인식된 브랜드 후보를 사용자가 확인하거나 여러 후보 중 하나를 선택합니다.
 4. 확인한 정규 브랜드명을 기존 `/api/analyze`의 `brand_texts`에 넣습니다.
 
@@ -44,10 +44,10 @@ OCR_MIN_CONFIDENCE=0.65
 
 ## 요청
 
-FastAPI `/docs`에서 `POST /api/ocr/brands` → Try it out → image 파일 선택 → Execute를 사용할 수 있습니다.
+FastAPI `/docs`에서 `POST /api/ocr/brands/local` → Try it out → image 파일 선택 → Execute를 사용할 수 있습니다.
 
 ```powershell
-curl.exe -X POST "http://127.0.0.1:8000/api/ocr/brands" -F "image=@C:/Users/User/Desktop/brand.jpg"
+curl.exe -X POST "http://127.0.0.1:8000/api/ocr/brands/local" -F "image=@C:/Users/User/Desktop/brand.jpg"
 ```
 
 - 파일 필드명은 image입니다. JSON의 파일 경로나 사진 URL은 받지 않습니다.
@@ -135,3 +135,9 @@ curl.exe -X POST "http://127.0.0.1:8000/api/ocr/brands" -F "image=@C:/Users/User
 
 글자가 선명한 사진, 어두운 사진, 기울어진 사진, 상표 없는 사진, 상표가 여러 개인 사진을 함께 평가하세요.
 깨끗한 합성 글자 이미지 인식 성공은 실제 촬영 정확도를 보증하지 않습니다.
+
+## 기존 AI 이미지 인식 API와 구분
+
+CPU OCR은 `POST /api/ocr/brands/local` (multipart image)을 사용합니다.
+기존 `POST /api/ocr/brands` (JSON image_base64)은 BAZE 이미지 인식 API로 유지합니다.
+서로 다른 요청·응답 형식이므로 프론트에서 혼용하지 않습니다.

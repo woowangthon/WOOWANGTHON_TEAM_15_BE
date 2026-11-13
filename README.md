@@ -380,7 +380,7 @@ AI의 내용 구별은 위 정답 예제 평가로, 실제 수집과 API 연결�
 
 ## 사진에서 상표명 OCR
 
-`POST /api/ocr/brands`에 JPEG/PNG 사진을 multipart 파일 필드 `image`로 보내면,
+`POST /api/ocr/brands/local`에 JPEG/PNG 사진을 multipart 파일 필드 `image`로 보내면,
 한국어·영어 글자와 등록된 브랜드 후보를 반환합니다. 후보를 확인한 뒤 기존 `/api/analyze`에 brand_texts로 전달하세요.
 
 - EasyOCR CPU 실행, 별도 OCR API 키·BAZE 호출 없음.
