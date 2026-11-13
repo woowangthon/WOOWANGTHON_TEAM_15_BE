@@ -27,7 +27,12 @@ SYSTEM_PROMPT = (
     "쓰지 말고 쉬운 말로 바꾸세요. 예: TLS → 보안 연결, 도메인 생성일 → 사이트 주소가 만들어진 시기, "
     "SHORT_URL → 단축 주소, EXECUTABLE_LINK → 앱·실행 파일을 내려받는 주소, "
     "brand_domain_status=mismatched → 상표의 공식 주소와 다름, "
-    "domain_impersonation_status=impersonation_suspected → 등록된 매장 주소를 흉내 낸 주소.\n"
+    "domain_impersonation_status=impersonation_suspected → 등록된 매장 주소를 흉내 낸 주소, "
+    "printed_domain_status=mismatched → QR 주변 안내문에 적힌 주소와 QR 주소가 다름(가짜 QR 스티커가 덧붙여졌을 수 있지만 "
+    "주문·예약 대행 서비스일 수도 있음), "
+    "brand_in_domain=true → 유명 상표 이름이 들어간 주소지만 그 상표의 공식 주소가 아님"
+    "(brand_lookalike=true이면 상표 이름의 글자를 바꾸거나 빼서 비슷하게 흉내 낸 주소), "
+    "phishing_keyword_in_domain=true → 주소 이름에 로그인·인증·환불 같은 단어가 들어 있음.\n"
     "3. overall은 화면에 표시되는 최종 판정입니다. 말의 강도를 overall.level에 맞추세요. "
     "위험이면 들어가지 말라고 분명히 권하고, 주의면 확인을 권하고, 낮음이면 큰 위험 신호는 없었다고 말하되 "
     "안전을 보장하지 마세요. 바깥의 score·level은 일부 항목만 반영한 값이므로 overall과 다르면 overall을 따르세요.\n"
@@ -38,9 +43,11 @@ SYSTEM_PROMPT = (
     "6. 이미 확인된 좋은 결과는 그대로 알려 주고, 같은 것을 다시 확인하라고 하지 마세요. "
     "brand_domain_status=matched이면 '상표의 공식 주소와 일치해요'라고 말하고, "
     "'공식 사이트인지 확인하세요'나 '공식 앱이나 직접 검색한 주소로 들어가세요' 같은 말은 하지 마세요. "
-    "store_qr_status=matched나 domain_impersonation_status=host_matched도 마찬가지입니다.\n"
+    "store_qr_status=matched나 domain_impersonation_status=host_matched도 마찬가지입니다. "
+    "printed_domain_status=matched이면 '안내문에 적힌 주소와 같아요'라고 말하세요.\n"
     "7. 마지막 문장은 남아 있는 위험에 맞는, 바로 할 수 있는 행동 하나로 끝내세요. "
     "예: 실행 파일 → 파일을 설치하지 않기, 공식 주소와 다름 → 공식 앱이나 직접 검색한 주소로 들어가기, "
+    "안내문 주소와 다름 → QR 위에 스티커가 덧붙여져 있지 않은지 살펴보기, "
     "보안 연결 없음 → 비밀번호·카드번호를 입력하지 않기. "
     "남은 위험 신호가 없으면 '평소와 다르게 비밀번호나 결제 정보를 요구하면 입력하지 마세요'처럼 "
     "들어간 뒤에 조심할 점 하나를 알려 주세요.\n"
@@ -103,6 +110,17 @@ def summary_for_ai(result):
     signals = (result.get("url_analysis") or {}).get("risk_signals")
     if signals:
         summary["url_signals"] = {key: signals.get(key) for key in URL_SIGNAL_KEYS}
+    keywords = result.get("domain_keyword_check") or {}
+    if keywords.get("brand_in_domain") or keywords.get("domain_keywords"):
+        # Flags only; the words and domains themselves are not forwarded.
+        flags = summary.setdefault("url_signals", {})
+        flags["brand_in_domain"] = bool(keywords.get("brand_in_domain"))
+        flags["brand_lookalike"] = (keywords.get("brand_in_domain") or {}).get("match") == "lookalike"
+        flags["phishing_keyword_in_domain"] = bool(keywords.get("domain_keywords"))
+    printed = (result.get("printed_domain_check") or {}).get("status")
+    if printed and printed != "not_checked":
+        # Status only; the printed domains themselves are not forwarded.
+        summary.setdefault("url_signals", {})["printed_domain_status"] = printed
     attacks = [{"type": a["type"], "severity": a["severity"]} for a in result.get("attack_types") or []
                if a.get("severity") not in {"none", "unknown"}]
     if attacks:

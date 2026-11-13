@@ -55,6 +55,26 @@ CORS_ORIGINS=http://localhost:8081
 | `POST /api/analyze`                         | URL·브랜드·매장 검사 + 도메인·TLS·국가 정보 + 선택적 AI 행동 점수 |
 | `POST /api/url/analyze`                     | URL 패턴·브랜드·매장 QR 비교 및 `risk_signals`                    |
 | `GET /api/stores/search?keyword=테스트카페` | 등록된 매장 이름 검색                                             |
+| `POST /api/ocr/brands`                      | 사진 속 상표명 후보 읽기 (AI 이미지 인식, 아래 참고)              |
+
+### 사진 속 상표명 읽기 (`POST /api/ocr/brands`)
+Expo Go에는 기기 내 OCR이 없어 서버의 AI 이미지 인식으로 상표명 후보를 읽습니다. 구현: `app/brand_ocr.py`, 테스트: `tests/test_brand_ocr.py`.
+```json
+{"image_base64": "<JPG/PNG/WebP base64, 원본 3MB 이하>"}
+```
+응답: `{"status": "ok|unavailable|invalid_image", "brands": [{"name": "스타벅스", "registered": true}], "domains": [{"text": "www.starbucks.co.kr", "domain": "starbucks.co.kr"}], "message": null}`
+- `domains`는 사진에 글자로 인쇄된 웹 주소입니다(QR 무늬 안의 내용이 아님). 등록 도메인으로 정리해 최대 5개 반환합니다.
+- 사용자가 "사진에서 찾기"를 누르거나, 앱에서 "QR 사진으로 상표·주소도 찾기"를 켰을 때만 전송합니다. 사진은 AI 게이트웨이에 한 번 보내고 저장·로그·캐시하지 않습니다.
+
+### 인쇄된 주소와 QR 주소 비교 (`printed_domains`)
+`POST /api/analyze`에 `printed_domains`(최대 10개)를 보내면 QR 주소(리디렉션 후 최종 주소 포함)의 등록 도메인과 비교해
+`printed_domain_check`(`matched`/`mismatched`/`not_checked`)를 반환합니다. 진짜 안내문 위에 가짜 QR 스티커를 덧붙인 경우를 잡기 위한 신호입니다.
+불일치는 종합 판정에 PRINTED_DOMAIN_MISMATCH(25점, 단독으로 주의)로 반영합니다. 주문·예약 대행 서비스처럼 정상적으로 다른 경우도 있어 위험이 아닌 주의로 둡니다.
+설명 AI에는 상태(printed_domain_status)만 보내고 인쇄된 주소 자체는 보내지 않습니다. 구현: `app/services/printed_domain.py`, 테스트: `tests/test_printed_domain.py`.
+- 후보는 최대 5개·각 30자 이하이고, 공식 도메인 DB에 있는 이름(registered=true)이 앞에 옵니다. 앱은 후보를 보여주기만 하고, 사용자가 고른 이름만 brand_texts로 보냅니다.
+- 사진 속 글자가 지시문이어도 따르지 않도록 프롬프트에 명시하고, 응답은 JSON 형식·길이·URL 포함 여부로 검증합니다.
+- 기본 모델은 BAZE_MODEL이며, 다른 이미지 모델을 쓰려면 `.env`에 `BAZE_VISION_MODEL`을 지정합니다.
+- 사진 한 장당 유료 AI 호출 1회가 발생합니다.
 
 URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습니다.
 이 검사는 대상 사이트에 접속하지 않으며 점수를 산정하지 않습니다.
@@ -116,9 +136,21 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 | BRAND_DOMAIN_MISMATCH      | 50   | brand_domain_status=mismatched                                                        |
 | STORE_DOMAIN_IMPERSONATION | 50   | domain_impersonation_status=impersonation_suspected                                   |
 | STORE_QR_MISMATCH          | 25   | store_qr_status=mismatched (위장 도메인으로 이미 잡히면 중복 가산 안 함)              |
+| PRINTED_DOMAIN_MISMATCH    | 25   | printed_domain_check.status=mismatched (QR 주변 인쇄 주소와 QR 주소가 다름)          |
 | SHORT_URL                  | 20   | 단축 URL                                                                              |
 | IP_LITERAL                 | 20   | IP 주소형 URL                                                                         |
 | REDIRECT_PARAMETER         | 20   | redirect_pattern_detected=true                                                        |
+| BRAND_IN_DOMAIN            | 50   | 공식 도메인 DB의 상표 단어(naver, starbucks 등)가 공식이 아닌 도메인에 포함 (입력 상표·매장 사칭으로 이미 잡히면 중복 가산 안 함) |
+| PHISHING_KEYWORD_DOMAIN    | 20   | 등록 도메인 이름에 login·verify·secure·refund·delivery 등 낚시성 단어                 |
+
+`domain_keyword_check`(`app/services/domain_keywords.py`, 테스트 `tests/test_domain_keywords.py`)
+- `brand_in_domain`: 상표 단어는 공식 도메인 DB에서 가져옵니다(`naver.com` → `naver`, 4글자 이상, 데모 항목 제외). 그 상표의 공식 도메인과 하위 도메인은 제외합니다.
+- 오타·비슷한 글자로 흉내 낸 도메인(`nav3r.com`, `starbuks.co.kr`, `edlya.com`)도 `brand_in_domain`(`match: lookalike`)으로 잡습니다.
+  3↔e, 0↔o, 1·i↔l, rn↔m 등 헷갈리는 글자를 같게 본 뒤, 8글자 이상 상표는 2글자까지, 짧은 상표는 글자 순서 바뀜·1글자 추가/누락만 허용합니다
+  (짧은 상표에서 다른 글자로 바꾼 경우는 never·saver 같은 일반 단어와 겹쳐 제외). 5글자 미만 상표는 비교하지 않습니다.
+- `domain_keywords`: 등록 도메인 이름(`secure-login-verify.com`)에 있을 때만 점수에 반영합니다.
+- `path_keywords`: 하위 도메인·경로·쿼리(`login.example.org/account`)의 단어는 정상 사이트에도 흔해 참고로만 반환합니다.
+- 설명 AI에는 해당 여부만 보내고 단어·도메인 자체는 보내지 않습니다.
 
 - 입력 주소와 최종 이동 주소의 신호는 합쳐서 신호마다 한 번만 더합니다.
 - 50 이상 위험, 20~49 주의, 20 미만은 behavior-v1 assessment_status=complete일 때만 낮음, 그 외 확인 불가.
