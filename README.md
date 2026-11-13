@@ -144,6 +144,9 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 
 `domain_keyword_check`(`app/services/domain_keywords.py`, 테스트 `tests/test_domain_keywords.py`)
 - `brand_in_domain`: 상표 단어는 공식 도메인 DB에서 가져옵니다(`naver.com` → `naver`, 4글자 이상, 데모 항목 제외). 그 상표의 공식 도메인과 하위 도메인은 제외합니다.
+- 오타·비슷한 글자로 흉내 낸 도메인(`nav3r.com`, `starbuks.co.kr`, `edlya.com`)도 `brand_in_domain`(`match: lookalike`)으로 잡습니다.
+  3↔e, 0↔o, 1·i↔l, rn↔m 등 헷갈리는 글자를 같게 본 뒤, 8글자 이상 상표는 2글자까지, 짧은 상표는 글자 순서 바뀜·1글자 추가/누락만 허용합니다
+  (짧은 상표에서 다른 글자로 바꾼 경우는 never·saver 같은 일반 단어와 겹쳐 제외). 5글자 미만 상표는 비교하지 않습니다.
 - `domain_keywords`: 등록 도메인 이름(`secure-login-verify.com`)에 있을 때만 점수에 반영합니다.
 - `path_keywords`: 하위 도메인·경로·쿼리(`login.example.org/account`)의 단어는 정상 사이트에도 흔해 참고로만 반환합니다.
 - 설명 AI에는 해당 여부만 보내고 단어·도메인 자체는 보내지 않습니다.

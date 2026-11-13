@@ -124,6 +124,8 @@ class PrintedDomainCheck(BaseModel):
 class BrandInDomain(BaseModel):
     word: str = Field(description="도메인에서 찾은 상표 단어 (예: naver)")
     official: list[str] = Field(description="그 상표의 공식 도메인")
+    match: Literal["contains", "lookalike"] = Field(default="contains", description="contains: 상표 단어 포함, lookalike: 오타·비슷한 글자로 흉내 냄")
+    found: str | None = Field(default=None, description="도메인에서 찾은 부분 (예: nav3r)")
 
 
 class DomainKeywordCheck(BaseModel):

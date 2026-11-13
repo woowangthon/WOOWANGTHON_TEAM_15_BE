@@ -33,6 +33,25 @@ class CheckerTests(unittest.TestCase):
             with self.subTest(url=url):
                 self.assertIsNone(check_domain_keywords([url])["brand_in_domain"])
 
+    def test_lookalike_brand_domains(self):
+        for url, word, found in [
+            ("https://nav3r.com", "naver", "nav3r"),            # 3 looks like e
+            ("https://naevr.com", "naver", "naevr"),            # swapped letters
+            ("https://navr.com", "naver", "navr"),              # missing letter
+            ("https://edlya.com", "ediya", "edlya"),            # l looks like i
+            ("https://starbuks.co.kr", "starbucks", "starbuks"),  # long name: up to two edits
+            ("https://event.staruck.com", "starbucks", "staruck"),
+        ]:
+            with self.subTest(url=url):
+                hit = check_domain_keywords([url])["brand_in_domain"]
+                self.assertEqual((hit["word"], hit["match"], hit["found"]), (word, "lookalike", found))
+
+    def test_real_words_near_short_brands_are_not_lookalikes(self):
+        for url in ["https://never.com", "https://saver.com", "https://paper.com", "https://media.com",
+                    "https://ideal.com", "https://startups.com", "https://stardust.com", "https://google.com"]:
+            with self.subTest(url=url):
+                self.assertIsNone(check_domain_keywords([url])["brand_in_domain"])
+
     def test_final_url_is_checked_too(self):
         self.assertIsNotNone(check_domain_keywords(["https://bit.ly/x", "https://naver-event.xyz/"])["brand_in_domain"])
 
@@ -51,7 +70,8 @@ class VerdictAPITests(unittest.TestCase):
 
     def test_brand_in_domain_is_danger_alone(self):
         data = self.post("https://naver-event.xyz")
-        self.assertEqual(data["domain_keyword_check"]["brand_in_domain"], {"word": "naver", "official": ["naver.com"]})
+        self.assertEqual(data["domain_keyword_check"]["brand_in_domain"],
+                         {"word": "naver", "official": ["naver.com"], "match": "contains", "found": "naver"})
         self.assertIn("BRAND_IN_DOMAIN", self.codes(data))
         self.assertEqual(data["verdict"]["level"], "위험")
         self.assertEqual(data["score"], 0)  # behavior-v1 unchanged
