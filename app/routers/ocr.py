@@ -11,7 +11,7 @@ router = APIRouter(prefix="/api/ocr", tags=["OCR"])
 OCR_TIMEOUT_SECONDS = 30
 
 
-@router.post("/brands", response_model=BrandOCRResponse)
+@router.post("/brands/local", response_model=BrandOCRResponse)
 async def extract_brands(image: Annotated[UploadFile, File(description="상표명이 보이는 JPEG/PNG 사진. 최대 5MiB")]):
     try:
         content = await image.read(MAX_IMAGE_BYTES + 1)

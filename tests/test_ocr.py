@@ -35,7 +35,7 @@ class OCRAPITests(unittest.TestCase):
         self.addCleanup(settings.stop)
 
     def upload(self, data=None, mime="image/png"):
-        return self.client.post("/api/ocr/brands", files={"image": ("photo.png", picture() if data is None else data, mime)})
+        return self.client.post("/api/ocr/brands/local", files={"image": ("photo.png", picture() if data is None else data, mime)})
 
     def test_upload_returns_candidates_and_confirmation_without_ai_or_url_requests(self):
         with patch("httpx.AsyncClient.post", AsyncMock()) as paid, patch("app.security.resolve", AsyncMock()) as dns:
@@ -71,7 +71,7 @@ class OCRAPITests(unittest.TestCase):
                 self.assertEqual(data["brand_texts"], [])
 
     def test_invalid_file_missing_upload_and_size_limits(self):
-        self.assertEqual(self.client.post("/api/ocr/brands").status_code, 422)
+        self.assertEqual(self.client.post("/api/ocr/brands/local").status_code, 422)
         self.assertEqual(self.upload(b"not-an-image").status_code, 400)
         self.assertEqual(self.upload(b"<svg/>", "image/svg+xml").status_code, 415)
         self.assertEqual(self.upload(b"x" * (5 * 1024 * 1024 + 1)).status_code, 413)
@@ -116,7 +116,7 @@ class UploadLimitTests(unittest.IsolatedAsyncioTestCase):
         receive = AsyncMock(side_effect=[{"type": "http.request", "body": b"x"*10, "more_body": True},
                                          {"type": "http.request", "body": b"x"*10, "more_body": False}])
         send = AsyncMock()
-        scope = {"type": "http", "method": "POST", "path": "/api/ocr/brands", "headers": []}
+        scope = {"type": "http", "method": "POST", "path": "/api/ocr/brands/local", "headers": []}
         with patch("app.middleware.ocr_upload.MAX_OCR_BODY_BYTES", 16):
             await middleware(scope, receive, send)
         inner.assert_not_called()

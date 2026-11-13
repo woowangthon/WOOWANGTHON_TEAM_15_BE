@@ -11,7 +11,7 @@ class OCRUploadLimitMiddleware:
         self.app = app
 
     async def __call__(self, scope, receive, send):
-        if scope["type"] != "http" or scope.get("method") != "POST" or scope.get("path", "").rstrip("/") != "/api/ocr/brands":
+        if scope["type"] != "http" or scope.get("method") != "POST" or scope.get("path", "").rstrip("/") != "/api/ocr/brands/local":
             return await self.app(scope, receive, send)
         headers = dict(scope.get("headers", []))
         declared = headers.get(b"content-length")
