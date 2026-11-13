@@ -14,8 +14,11 @@ from app.page_analysis import inspect_page
 from app.routers.url_analysis import router as url_analysis_router
 from app.services.url_analysis import analyze_url_signals
 from app.verdict import combined_verdict
+from app.routers.ocr import router as ocr_router
+from app.middleware.ocr_upload import OCRUploadLimitMiddleware
 
-app = FastAPI(title="QR Alert API", version="0.6.0")
+app = FastAPI(title="QR Alert API", version="0.7.0")
+app.add_middleware(OCRUploadLimitMiddleware)
 origins = [s.strip() for s in os.getenv("CORS_ORIGINS", "").split(",") if s.strip()]
 if origins:
     app.add_middleware(CORSMiddleware, allow_origins=origins,
@@ -89,3 +92,4 @@ async def analyze(request: AnalyzeRequest):
 
 
 app.include_router(url_analysis_router)
+app.include_router(ocr_router)
