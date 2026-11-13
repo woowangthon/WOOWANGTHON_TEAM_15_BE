@@ -4,7 +4,8 @@
 선택적으로 정적 HTML과 AI를 이용해 요구 행동의 위험도를 평가합니다.
 휴대폰 앱은 URL을 보내고 JSON을 받습니다. 2번의 URL 패턴·브랜드·매장 검사는
 공통 서비스로 연결되어 한 요청에서 함께 실행됩니다.
-1번의 QR/OCR과 4번의 결과 화면·사용자 확인 후 URL 열기는 별도 담당 범위입니다.
+사진의 상표명 OCR은 서버의 `/api/ocr/brands`에서 수행합니다.
+QR 해독·사진 촬영 및 결과 화면·사용자 확인 후 URL 열기는 앱 담당 범위입니다.
 
 ## 실행
 
@@ -344,3 +345,28 @@ URL 검사 예제:
 통합 API에서 https://127.0.0.1은 내부 주소 차단, not-a-url은 422가 기대 결과입니다.
 2번의 URL 신호는 behavior-v1 점수와 별도이므로 실행 파일 링크가 잡혀도 점수가 반드시 올라가지는 않습니다.
 AI의 내용 구별은 위 정답 예제 평가로, 실제 수집과 API 연결은 Swagger로 나누어 확인하세요.
+
+## 사진에서 상표명 OCR
+
+`POST /api/ocr/brands`에 JPEG/PNG 사진을 multipart 파일 필드 `image`로 보내면,
+한국어·영어 글자와 등록된 브랜드 후보를 반환합니다. 후보를 확인한 뒤 기존 `/api/analyze`에 brand_texts로 전달하세요.
+
+- EasyOCR CPU 실행, 별도 OCR API 키·BAZE 호출 없음.
+- 최대 5MiB·1,600만 화소, 방향 보정 및 긴 변 1,600픽셀 축소.
+- 낮은 신뢰도·여러 브랜드·미등록 브랜드를 구분하며, 인식 결과는 자동 확정하지 않음.
+- OCR 모델은 한 번 준비하고 재사용. 일반 요청에서는 모델 다운로드를 하지 않음.
+- 기본 requirements에 더해 requirements-ocr.txt 설치와 모델 준비가 필요함.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+.\.venv\Scripts\python.exe -m pip install -r requirements-ocr.txt
+.\.venv\Scripts\python.exe -B -m scripts.setup_ocr --download-models
+```
+
+서버를 켠 뒤 `/docs`에서 파일 업로드로 테스트하거나 다음 명령으로 사진을 직접 검사할 수 있습니다.
+
+```powershell
+.\.venv\Scripts\python.exe -B -m scripts.check_ocr "C:/Users/User/Desktop/brand.jpg"
+```
+
+[OCR 요청·응답과 프론트 연결 방법](app/docs/ocr_api.md)에 설치, 상태 코드, 브랜드 별칭 추가 방법을 정리했습니다.
