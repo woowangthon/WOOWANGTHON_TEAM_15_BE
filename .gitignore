@@ -28,3 +28,7 @@ htmlcov/
 # 운영체제 임시 파일
 .DS_Store
 Thumbs.db
+
+# Local OCR model weights and generated smoke images
+/data/ocr_models/
+/data/ocr_smoke/

@@ -34,3 +34,13 @@ def geoip_database_path():
         return None
     path = Path(value).expanduser()
     return (path if path.is_absolute() else PROJECT_ROOT / path).resolve()
+
+
+def ocr_settings():
+    value = os.getenv("OCR_MODEL_DIR", "./data/ocr_models").strip() or "./data/ocr_models"
+    path = Path(value).expanduser()
+    confidence = float(os.getenv("OCR_MIN_CONFIDENCE", "0.65"))
+    if not 0 <= confidence <= 1:
+        raise ValueError("OCR_MIN_CONFIDENCE must be between 0 and 1")
+    return {"model_dir": (path if path.is_absolute() else PROJECT_ROOT / path).resolve(),
+            "min_confidence": confidence}
