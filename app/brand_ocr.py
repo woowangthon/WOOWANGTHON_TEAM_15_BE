@@ -16,6 +16,7 @@ from urllib.parse import urlsplit
 import httpx
 
 from app.config import baze_settings
+from app.services.brand_alias import expand_brand_texts
 from app.services.printed_domain import MAX_PRINTED, registered_domain
 
 MAX_IMAGE_BYTES = 3 * 1024 * 1024
@@ -167,8 +168,11 @@ async def read_brands(image_base64):
         return {"status": "unavailable", "brands": [], "domains": [], "message": UNAVAILABLE_MESSAGE}
 
     registered = registered_brand_keys()
+    # "네이버 웹툰" -> also offer "네이버" so the official-domain check can compare it.
+    names = expand_brand_texts(names, limit=MAX_BRANDS * 2)
     brands = [{"name": name, "registered": name.casefold() in registered} for name in names]
     # Names with an official domain on file first: those are the ones the brand check can compare.
     brands.sort(key=lambda b: not b["registered"])
+    brands = brands[:MAX_BRANDS]
     message = None if brands or domains else "사진에서 상표명이나 주소를 찾지 못했어요. 상표명을 직접 입력해 주세요."
     return {"status": "ok", "brands": brands, "domains": domains, "message": message}

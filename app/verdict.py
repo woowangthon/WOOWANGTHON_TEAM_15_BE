@@ -24,6 +24,9 @@ SIGNAL_POINTS = {
     "STORE_QR_MISMATCH": (25, "등록된 매장 QR 주소와 다릅니다."),
     # 주의 alone: a fake sticker on a genuine poster, but ordering/booking platforms also differ legitimately.
     "PRINTED_DOMAIN_MISMATCH": (25, "QR 주변에 인쇄된 주소와 QR 주소가 다릅니다."),
+    # P1-8: a brand's name inside a domain that is not that brand's official domain.
+    "BRAND_IN_DOMAIN": (50, "상표 이름이 들어간 주소지만 그 상표의 공식 도메인이 아닙니다."),
+    "PHISHING_KEYWORD_DOMAIN": (20, "도메인 이름에 로그인·인증·환불 같은 낚시성 단어가 있습니다."),
     "SHORT_URL": (20, "단축 URL이라 실제 목적지를 숨길 수 있습니다."),
     "IP_LITERAL": (20, "도메인 대신 IP 주소를 사용합니다."),
     "REDIRECT_PARAMETER": (20, "다른 사이트로 넘겨주는 매개변수가 있습니다."),
@@ -63,6 +66,14 @@ def combined_verdict(result):
         codes.add("BLOCKED_NAVIGATION")
     if (result.get("printed_domain_check") or {}).get("status") == "mismatched":
         codes.add("PRINTED_DOMAIN_MISMATCH")
+    keywords = result.get("domain_keyword_check") or {}
+    if keywords.get("brand_in_domain"):
+        codes.add("BRAND_IN_DOMAIN")
+    if keywords.get("domain_keywords"):
+        codes.add("PHISHING_KEYWORD_DOMAIN")
+    # Same impersonation already counted from the entered brand or store: do not add it twice.
+    if codes & {"BRAND_DOMAIN_MISMATCH", "STORE_DOMAIN_IMPERSONATION"}:
+        codes.discard("BRAND_IN_DOMAIN")
     if "STORE_DOMAIN_IMPERSONATION" in codes:
         codes.discard("STORE_QR_MISMATCH")
 

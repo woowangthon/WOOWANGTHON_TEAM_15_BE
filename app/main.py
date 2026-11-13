@@ -13,6 +13,8 @@ from app.brand_ocr import read_brands
 from app.models import AnalyzeResponse
 from app.page_analysis import inspect_page
 from app.routers.url_analysis import router as url_analysis_router
+from app.services.brand_alias import expand_brand_texts
+from app.services.domain_keywords import check_domain_keywords
 from app.services.printed_domain import compare_printed_domains
 from app.services.url_analysis import analyze_url_signals
 from app.verdict import combined_verdict
@@ -52,7 +54,9 @@ async def analyze(request: AnalyzeRequest):
         url, _, _, _ = parse_url(request.qr_text)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    local = await asyncio.to_thread(analyze_url_signals, url, request.brand_texts, request.store_id)
+    # "네이버 웹툰" also counts as "네이버" for the official-domain comparison (exact-name DB).
+    brand_texts = expand_brand_texts(request.brand_texts)
+    local = await asyncio.to_thread(analyze_url_signals, url, brand_texts, request.store_id)
     if not local["url_info"]["valid"]:
         raise HTTPException(status_code=422, detail=local["url_info"].get("reason", "잘못된 URL입니다."))
     result = await analyze_url(url)
@@ -65,7 +69,7 @@ async def analyze(request: AnalyzeRequest):
         final_url = page.get("final_url")
         if page["status"] == "ok" and final_url and final_url != url:
             final_local = await asyncio.to_thread(
-                analyze_url_signals, final_url, request.brand_texts, request.store_id)
+                analyze_url_signals, final_url, brand_texts, request.store_id)
     else:
         ai_status = "skipped" if request.include_ai else "disabled"
         ai_model = None
@@ -82,6 +86,8 @@ async def analyze(request: AnalyzeRequest):
         # Printed address next to the QR vs the QR's own (and final) address: catches fake QR stickers.
         "printed_domain_check": compare_printed_domains(
             [url, final_local["url_info"]["url"] if final_local else None], request.printed_domains),
+        # Brand words / phishing words inside a non-official domain name (P1-8).
+        "domain_keyword_check": check_domain_keywords([url, final_local["url_info"]["url"] if final_local else None]),
     }
     # Overall verdict (combined-v1) adds URL/brand/store signals on top of behavior-v1.
     response["verdict"] = combined_verdict(response)

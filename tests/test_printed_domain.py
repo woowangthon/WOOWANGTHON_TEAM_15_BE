@@ -65,7 +65,7 @@ class AnalyzeAPITests(unittest.TestCase):
             return self.client.post("/api/analyze", json={"qr_text": url, "brand_texts": [], "printed_domains": printed}).json()
 
     def test_mismatch_adds_caution_points(self):
-        data = self.post("https://starbucks-event.example.com", ["www.starbucks.co.kr"])
+        data = self.post("https://autumn-event.example.com", ["www.starbucks.co.kr"])
         self.assertEqual(data["printed_domain_check"], {"status": "mismatched", "printed": ["starbucks.co.kr"], "qr_domain": "example.com"})
         self.assertIn("PRINTED_DOMAIN_MISMATCH", [r["code"] for r in data["verdict"]["reasons"]])
         self.assertEqual(data["verdict"]["score"], 25)
@@ -80,7 +80,7 @@ class AnalyzeAPITests(unittest.TestCase):
                 self.assertNotIn("PRINTED_DOMAIN_MISMATCH", [r["code"] for r in data["verdict"]["reasons"]])
 
     def test_ai_summary_gets_status_only(self):
-        data = self.post("https://starbucks-event.example.com", ["www.starbucks.co.kr"])
+        data = self.post("https://autumn-event.example.com", ["www.starbucks.co.kr"])
         summary = json.dumps(summary_for_ai(data), ensure_ascii=False)
         self.assertIn('"printed_domain_status": "mismatched"', summary)
         self.assertNotIn("starbucks.co.kr", summary)

@@ -121,6 +121,17 @@ class PrintedDomainCheck(BaseModel):
     qr_domain: str | None = None
 
 
+class BrandInDomain(BaseModel):
+    word: str = Field(description="도메인에서 찾은 상표 단어 (예: naver)")
+    official: list[str] = Field(description="그 상표의 공식 도메인")
+
+
+class DomainKeywordCheck(BaseModel):
+    brand_in_domain: BrandInDomain | None = None
+    domain_keywords: list[str] = Field(default_factory=list, description="등록 도메인 이름 속 낚시성 단어 (점수 반영)")
+    path_keywords: list[str] = Field(default_factory=list, description="하위 도메인·경로·쿼리 속 낚시성 단어 (참고만)")
+
+
 class AnalyzeResponse(BaseModel):
     url: str
     hostname: str
@@ -157,3 +168,5 @@ class AnalyzeResponse(BaseModel):
     verdict: Verdict
     # Web address printed next to the QR (from a photo) vs the QR's address. not_checked when none sent.
     printed_domain_check: PrintedDomainCheck
+    # Brand / phishing words in a non-official domain name. Empty when nothing was found.
+    domain_keyword_check: DomainKeywordCheck

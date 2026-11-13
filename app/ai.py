@@ -29,7 +29,9 @@ SYSTEM_PROMPT = (
     "brand_domain_status=mismatched → 상표의 공식 주소와 다름, "
     "domain_impersonation_status=impersonation_suspected → 등록된 매장 주소를 흉내 낸 주소, "
     "printed_domain_status=mismatched → QR 주변 안내문에 적힌 주소와 QR 주소가 다름(가짜 QR 스티커가 덧붙여졌을 수 있지만 "
-    "주문·예약 대행 서비스일 수도 있음).\n"
+    "주문·예약 대행 서비스일 수도 있음), "
+    "brand_in_domain=true → 유명 상표 이름이 들어간 주소지만 그 상표의 공식 주소가 아님, "
+    "phishing_keyword_in_domain=true → 주소 이름에 로그인·인증·환불 같은 단어가 들어 있음.\n"
     "3. overall은 화면에 표시되는 최종 판정입니다. 말의 강도를 overall.level에 맞추세요. "
     "위험이면 들어가지 말라고 분명히 권하고, 주의면 확인을 권하고, 낮음이면 큰 위험 신호는 없었다고 말하되 "
     "안전을 보장하지 마세요. 바깥의 score·level은 일부 항목만 반영한 값이므로 overall과 다르면 overall을 따르세요.\n"
@@ -107,6 +109,12 @@ def summary_for_ai(result):
     signals = (result.get("url_analysis") or {}).get("risk_signals")
     if signals:
         summary["url_signals"] = {key: signals.get(key) for key in URL_SIGNAL_KEYS}
+    keywords = result.get("domain_keyword_check") or {}
+    if keywords.get("brand_in_domain") or keywords.get("domain_keywords"):
+        # Flags only; the words and domains themselves are not forwarded.
+        flags = summary.setdefault("url_signals", {})
+        flags["brand_in_domain"] = bool(keywords.get("brand_in_domain"))
+        flags["phishing_keyword_in_domain"] = bool(keywords.get("domain_keywords"))
     printed = (result.get("printed_domain_check") or {}).get("status")
     if printed and printed != "not_checked":
         # Status only; the printed domains themselves are not forwarded.

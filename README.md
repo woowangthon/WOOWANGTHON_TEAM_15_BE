@@ -139,6 +139,14 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 | SHORT_URL                  | 20   | 단축 URL                                                                              |
 | IP_LITERAL                 | 20   | IP 주소형 URL                                                                         |
 | REDIRECT_PARAMETER         | 20   | redirect_pattern_detected=true                                                        |
+| BRAND_IN_DOMAIN            | 50   | 공식 도메인 DB의 상표 단어(naver, starbucks 등)가 공식이 아닌 도메인에 포함 (입력 상표·매장 사칭으로 이미 잡히면 중복 가산 안 함) |
+| PHISHING_KEYWORD_DOMAIN    | 20   | 등록 도메인 이름에 login·verify·secure·refund·delivery 등 낚시성 단어                 |
+
+`domain_keyword_check`(`app/services/domain_keywords.py`, 테스트 `tests/test_domain_keywords.py`)
+- `brand_in_domain`: 상표 단어는 공식 도메인 DB에서 가져옵니다(`naver.com` → `naver`, 4글자 이상, 데모 항목 제외). 그 상표의 공식 도메인과 하위 도메인은 제외합니다.
+- `domain_keywords`: 등록 도메인 이름(`secure-login-verify.com`)에 있을 때만 점수에 반영합니다.
+- `path_keywords`: 하위 도메인·경로·쿼리(`login.example.org/account`)의 단어는 정상 사이트에도 흔해 참고로만 반환합니다.
+- 설명 AI에는 해당 여부만 보내고 단어·도메인 자체는 보내지 않습니다.
 
 - 입력 주소와 최종 이동 주소의 신호는 합쳐서 신호마다 한 번만 더합니다.
 - 50 이상 위험, 20~49 주의, 20 미만은 behavior-v1 assessment_status=complete일 때만 낮음, 그 외 확인 불가.
