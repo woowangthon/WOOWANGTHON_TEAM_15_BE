@@ -1,0 +1,25 @@
+# Render Blueprint: Dashboard → New → Blueprint → this repo. Values marked sync: false are asked for once.
+services:
+  - type: web
+    name: qure-api
+    runtime: python
+    plan: free
+    branch: main
+    buildCommand: pip install -r requirements.txt && python -m scripts.fetch_geoip
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.2
+      - key: BAZE_API_KEY
+        sync: false
+      - key: BAZE_BASE_URL
+        value: https://factchat-cloud.mindlogic.ai/v1/gateway
+      - key: BAZE_MODEL
+        value: gpt-6-luna
+      - key: GEOIP_DB_PATH
+        value: ./data/GeoLite2-Country.mmdb
+      - key: MAXMIND_ACCOUNT_ID
+        sync: false
+      - key: MAXMIND_LICENSE_KEY
+        sync: false
