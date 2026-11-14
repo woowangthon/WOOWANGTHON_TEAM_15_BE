@@ -1,5 +1,21 @@
 # 상표명 OCR API
 
+## 현재 앱: BAZE AI OCR
+
+현재 앱은 팀원의 `app/brand_ocr.py`에 구현된 `read_brands()`를 호출합니다.
+
+- `POST /api/ocr/brands`: JSON `{"image_base64": "..."}`, 원본 이미지 3MiB 이하.
+- BAZE_API_KEY / BAZE_BASE_URL / BAZE_MODEL을 사용합니다. BAZE_VISION_MODEL을 지정하면 OCR 모델만 별도로 선택합니다.
+- 사진은 외부 AI 게이트웨이로 전송되고 API 사용량이 발생할 수 있습니다. 백엔드는 영구 저장하지 않습니다.
+- 응답은 status, brands[].name / registered, domains[], message입니다. 수치 OCR 신뢰도를 제공하지 않습니다.
+- 앱은 사용자가 확인한 상표만 brand_texts로 분석 요청에 전달합니다.
+- 영문 등 등록된 별칭은 정규 브랜드 후보도 함께 제시합니다.
+- CPU로 자동 재시도하지 않습니다.
+
+## 선택용 CPU OCR
+
+아래 설치·파일 업로드 규격은 별도 `/api/ocr/brands/local`에만 해당합니다.
+
 ## 흐름
 
 1. 앱에서 QR 주변의 상표 글자가 포함된 JPEG/PNG 사진을 확보합니다. QR 문자열만으로 사진을 복원할 수 없습니다.
@@ -8,7 +24,7 @@
 4. 확인한 정규 브랜드명을 기존 `/api/analyze`의 `brand_texts`에 넣습니다.
 
 OCR은 글자를 읽습니다. 글자 없는 그림 로고를 분류하거나 브랜드의 진위를 인증하지 않습니다.
-현재 앱의 사진 업로드/후보 확인 화면은 별도로 연결해야 합니다.
+현재 앱은 위의 AI OCR과 후보 확인에 연결되어 있습니다. 이 CPU API는 별도로 호출할 수 있습니다.
 
 ## 실행 환경 설치
 

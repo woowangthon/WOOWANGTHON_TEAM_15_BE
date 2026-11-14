@@ -59,6 +59,14 @@ class BrandOCRAPITests(unittest.TestCase):
         self.assertTrue(image_part.startswith("data:image/png;base64,"))
         self.assertNotIn("test-only-key", json.dumps(sent))
 
+    def test_english_alias_offers_registered_canonical_candidate(self):
+        with patch("app.brand_ocr.baze_settings", return_value=SETTINGS), \
+             patch("httpx.AsyncClient.post", AsyncMock(return_value=ai_reply('{"brands": ["STARBUCKS COFFEE", "NAVERX"]}'))):
+            data = self.client.post("/api/ocr/brands", json={"image_base64": B64_PNG}).json()
+        self.assertIn({"name": "스타벅스", "registered": True}, data["brands"])
+        self.assertIn({"name": "NAVERX", "registered": False}, data["brands"])
+        self.assertNotIn("ocr_confidence", data)
+
     def test_empty_result_has_message(self):
         with patch("app.brand_ocr.baze_settings", return_value=SETTINGS), \
              patch("httpx.AsyncClient.post", AsyncMock(return_value=ai_reply('{"brands": []}'))):
