@@ -58,7 +58,7 @@ CORS_ORIGINS=http://localhost:8081
 | `POST /api/ocr/brands`                      | 사진 속 상표명 후보 읽기 (AI 이미지 인식, 아래 참고)              |
 
 ### 사진 속 상표명 읽기 (`POST /api/ocr/brands`)
-Expo Go에는 기기 내 OCR이 없어 서버의 AI 이미지 인식으로 상표명 후보를 읽습니다. 구현: `app/brand_ocr.py`, 테스트: `tests/test_brand_ocr.py`.
+Expo Go에는 기기 내 OCR이 없어 서버의 AI 이미지 인식으로 상표명 후보를 읽습니다. 현재 앱이 사용하는 구현: `app/brand_ocr.py`, 테스트: `tests/test_brand_ocr.py`. BAZE_VISION_MODEL을 지정하면 OCR에만 별도 모델을 사용할 수 있고, 비우면 BAZE_MODEL을 사용합니다.
 ```json
 {"image_base64": "<JPG/PNG/WebP base64, 원본 3MB 이하>"}
 ```
@@ -402,3 +402,10 @@ AI의 내용 구별은 위 정답 예제 평가로, 실제 수집과 API 연결�
 ```
 
 [OCR 요청·응답과 프론트 연결 방법](app/docs/ocr_api.md)에 설치, 상태 코드, 브랜드 별칭 추가 방법을 정리했습니다.
+
+## 단축 링크 해제 후 2번 검사
+
+POST /api/url/analyze에 `resolve_redirects: true`를 추가하면, 서버가 HTTP 이동을 확인한 뒤
+최종 주소의 URL 패턴·브랜드·매장 검사 결과를 `final_url_analysis`로 함께 반환합니다.
+기본값 false에서는 기존의 로컬 검사 동작을 유지합니다. AI 호출은 사용하지 않습니다.
+요청 예시와 상태·제한은 [단축 링크 연결 명세](app/docs/url_resolution.md)를 참고하세요.
