@@ -8,7 +8,7 @@ from app.services.suspicious_patterns import check_suspicious_patterns
 from app.services.url_parser import parse_qr_url
 
 
-def analyze_url_signals(qr_text: str, brand_texts: list[str], store_id: str | None = None) -> dict:
+def analyze_url_signals(qr_text: str, brand_texts: list[str], store_id: str | None = None, *, compare_brand=True) -> dict:
     errors = []
 
     def registry_check(function, code, *args):
@@ -24,7 +24,9 @@ def analyze_url_signals(qr_text: str, brand_texts: list[str], store_id: str | No
     analysis = {
         "url_info": url_info,
         "suspicious_patterns": check_suspicious_patterns(qr_text),
-        "brand_domain": registry_check(compare_brand_domain, "BRAND_DB_UNAVAILABLE", qr_text, brand_texts),
+        "brand_domain": (registry_check(compare_brand_domain, "BRAND_DB_UNAVAILABLE", qr_text, brand_texts)
+                         if compare_brand else {"status": "unknown", "source": "ai_web_search",
+                                                "reason": "공식 도메인 AI 검색 전입니다."}),
         "store_qr": None,
         "domain_impersonation": None,
         "redirect_patterns": check_redirect_patterns(qr_text),

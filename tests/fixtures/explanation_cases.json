@@ -1,0 +1,23 @@
+[
+  {"id": "naver_brand", "qr_text": "https://www.naver.com", "brand_texts": ["네이버"], "expected_level": "낮음",
+   "note": "공식 도메인 일치를 말하고, 공식 사이트인지 다시 확인하라고 하지 않아야 함"},
+  {"id": "naver_plain", "qr_text": "https://www.naver.com", "brand_texts": [], "expected_level": "낮음",
+   "note": "상표명 없음: 공식 주소 비교는 언급하지 않거나 짧게"},
+  {"id": "python_org", "qr_text": "https://www.python.org", "brand_texts": [], "expected_level": "낮음",
+   "note": "해외 서버여도 위험하다고 하지 않아야 함"},
+  {"id": "apk_link", "qr_text": "https://example.com/setup.apk", "brand_texts": [], "expected_level": "위험",
+   "note": "실행 파일 다운로드를 첫 이유로, 설치하지 말라고 끝내야 함"},
+  {"id": "brand_mismatch", "qr_text": "https://example.com", "brand_texts": ["스타벅스"], "expected_level": "위험",
+   "note": "공식 주소와 다르다고 말하고 공식 앱·직접 검색을 권해야 함"},
+  {"id": "store_impersonation", "qr_text": "https://menu.example.com.evil.example/store/demo-cafe-01", "brand_texts": [],
+   "store_id": "demo-cafe-01", "expected_level": "위험",
+   "note": "등록된 매장 주소를 흉내 낸 주소라고 말해야 함"},
+  {"id": "ip_literal", "qr_text": "https://1.1.1.1", "brand_texts": [], "expected_level": "주의",
+   "note": "숫자 주소를 쉬운 말로 설명해야 함"},
+  {"id": "http_only", "qr_text": "http://neverssl.com", "brand_texts": [], "expected_level": null,
+   "note": "보안 연결 없음 → 비밀번호·카드번호 입력 금지로 끝내야 함"},
+  {"id": "starbucks_official", "qr_text": "https://www.starbucks.co.kr", "brand_texts": ["스타벅스"], "expected_level": null,
+   "note": "공식 도메인 일치. 일부 조회가 안 돼도 다시 확인하라고 하지 않아야 함"},
+  {"id": "short_url_blocked", "qr_text": "https://bit.ly/demo", "brand_texts": [], "expected_level": "위험",
+   "note": "차단된 주소: AI를 부르지 않고 차단 사유만 나와야 함"}
+]

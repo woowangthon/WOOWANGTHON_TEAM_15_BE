@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
+from tests.domain_mocks import install_domain_mock
 
 from app.behavior import ATTACK_TYPES, unknown_attacks
 from app.main import app
@@ -105,12 +106,15 @@ class PageAITests(unittest.IsolatedAsyncioTestCase):
 
 
 class PageAPITests(unittest.TestCase):
+    def setUp(self):
+        self.domain_search = install_domain_mock(self)
+
     def test_opt_in_and_score_response_contract(self):
         with patch("app.main.analyze_url", AsyncMock(return_value=copy.deepcopy(BASE))), patch("app.main.inspect_page", AsyncMock()) as inspect, patch("httpx.AsyncClient.post", AsyncMock()) as post, TestClient(app) as client:
             response = client.post("/api/analyze", json={"qr_text": BASE["url"], "brand_texts": [], "include_ai": False})
             self.assertEqual(response.status_code, 200)
             self.assertIsNone(response.json()["page"])
-            self.assertEqual(response.json()["assessment_status"], "partial")
+            self.assertEqual(response.json()["assessment_status"], "complete")
             self.assertEqual(response.json()["components"]["ai_behavior"], None)
             inspect.assert_not_called()
             post.assert_not_called()
@@ -120,8 +124,8 @@ class PageAPITests(unittest.TestCase):
         with patch("app.main.analyze_url", AsyncMock(return_value=copy.deepcopy(BASE))), patch("app.main.inspect_page", AsyncMock(return_value=scored)), patch("httpx.AsyncClient.post", AsyncMock()) as post, TestClient(app) as client:
             response = client.post("/api/analyze", json={"qr_text": BASE["url"], "brand_texts": [], "inspect_page": True})
             self.assertEqual(response.status_code, 200)
-            self.assertEqual(response.json()["score"], 60)
-            self.assertEqual(response.json()["components"]["ai_behavior"], 60)
+            self.assertEqual(response.json()["score"], 0)
+            self.assertEqual(response.json()["components"]["ai_behavior"], None)
             self.assertEqual(response.json()["ai_status"], "generated")
             self.assertFalse(response.json()["auto_open"])
             post.assert_not_called()

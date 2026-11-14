@@ -101,13 +101,47 @@ class PageReport(BaseModel):
     ai_explanation: str | None = None
 
 
+class VerdictReason(BaseModel):
+    code: str
+    points: int
+    message: str
+
+
+class Verdict(BaseModel):
+    """Public combined-v2 excludes page AI. combined-v1 denotes historical responses."""
+    version: Literal["combined-v1", "combined-v2"]
+    assessment_status: Literal["complete", "partial", "failed"]
+    score: int | None = Field(ge=0, le=100)
+    level: Literal["낮음", "주의", "위험", "확인 불가"]
+    reasons: list[VerdictReason]
+
+
+class PrintedDomainCheck(BaseModel):
+    status: Literal["matched", "mismatched", "not_checked"]
+    printed: list[str] = Field(default_factory=list, description="비교한 인쇄 주소의 등록 도메인")
+    qr_domain: str | None = None
+
+
+class BrandInDomain(BaseModel):
+    word: str = Field(description="도메인에서 찾은 상표 단어 (예: naver)")
+    official: list[str] = Field(description="그 상표의 공식 도메인")
+    match: Literal["contains", "lookalike"] = Field(default="contains", description="contains: 상표 단어 포함, lookalike: 오타·비슷한 글자로 흉내 냄")
+    found: str | None = Field(default=None, description="도메인에서 찾은 부분 (예: nav3r)")
+
+
+class DomainKeywordCheck(BaseModel):
+    brand_in_domain: BrandInDomain | None = None
+    domain_keywords: list[str] = Field(default_factory=list, description="등록 도메인 이름 속 낚시성 단어 (점수 반영)")
+    path_keywords: list[str] = Field(default_factory=list, description="하위 도메인·경로·쿼리 속 낚시성 단어 (참고만)")
+
+
 class AnalyzeResponse(BaseModel):
     url: str
     hostname: str
     evidence: Evidence
     score: int | None = Field(ge=0, le=100)
-    score_version: Literal["behavior-v1"]
-    score_scope: Literal["ai_behavior_tls_domain_age"]
+    score_version: Literal["behavior-v1", "metadata-v2"]
+    score_scope: Literal["ai_behavior_tls_domain_age", "tls_domain_age"]
     url_analysis: URLAnalysisResponse
     final_url_analysis: URLAnalysisResponse | None = None
     assessment_status: Literal["complete", "partial", "failed"]
@@ -125,3 +159,17 @@ class AnalyzeResponse(BaseModel):
     ai_status: Literal["generated", "cached", "disabled", "unavailable", "skipped"]
     ai_model: str | None
     page: PageReport | None = None
+    # Plain-language summary for the result screen. AI-written only when explanation_status is
+    # generated/cached; otherwise it is the same rule-based text as ai_explanation.
+    explanation: str
+    explanation_status: Literal["generated", "cached", "disabled", "unavailable", "skipped"]
+    explanation_model: str | None = None
+    # Why no AI explanation was made, for the AI card: set when explanation_status is skipped (blocked target)
+    # or unavailable (AI not configured, timeout, invalid response). None when disabled or generated.
+    explanation_skip_reason: str | None = None
+    # Overall verdict for the result screen. score/level above stay behavior-v1 for compatibility.
+    verdict: Verdict
+    # Web address printed next to the QR (from a photo) vs the QR's address. not_checked when none sent.
+    printed_domain_check: PrintedDomainCheck
+    # Brand / phishing words in a non-official domain name. Empty when nothing was found.
+    domain_keyword_check: DomainKeywordCheck

@@ -1,12 +1,12 @@
 """Bounded, DNS-pinned HTML GETs. No browser, JS, subresources, cookies or form submission."""
 import asyncio
 import socket
-import ssl
 from urllib.parse import unquote, urljoin, urlsplit
 
 import aiohttp
 from aiohttp.abc import AbstractResolver
 
+from app.config import tls_context
 from app.security import DOWNLOADS, parse_url, public_ip, resolve
 
 MAX_BYTES = 256 * 1024
@@ -34,16 +34,16 @@ class PinnedResolver(AbstractResolver):
         pass
 
 
-async def request_html(url, hostname, port, addresses):
+async def request_html(url, hostname, port, addresses, *, headers_only=False):
     """Return headers/body only; caller manually validates every redirect."""
     connector = aiohttp.TCPConnector(
         resolver=PinnedResolver(hostname, addresses), use_dns_cache=False,
-        force_close=True, limit=1, ssl=ssl.create_default_context(),
+        force_close=True, limit=1, ssl=tls_context(),
     )
     async with aiohttp.ClientSession(
         connector=connector, cookie_jar=aiohttp.DummyCookieJar(), trust_env=False,
         auto_decompress=False, timeout=aiohttp.ClientTimeout(total=8, sock_connect=4, sock_read=4),
-        headers={"User-Agent": "QRAlert-SecurityPreview/1.0", "Accept": "text/html,application/xhtml+xml",
+        headers={"User-Agent": "QURE-SecurityPreview/1.0", "Accept": "text/html,application/xhtml+xml",
                  "Accept-Encoding": "identity"},
         max_line_size=8190, max_field_size=8190,
     ) as client:
@@ -52,6 +52,12 @@ async def request_html(url, hostname, port, addresses):
             metadata = {"http_status": response.status}
             if response.status in REDIRECT_CODES:
                 return {**metadata, "location": headers.get("Location")}
+            if headers_only:
+                # Close the response without reading the body, including attachments/binary data.
+                if not 200 <= response.status < 300:
+                    return {**metadata, "status": "unknown", "reason": "정상 응답이 아니므로 최종 주소 확인을 완료하지 못했습니다."}
+                return {**metadata, "status": "ok", "bytes_read": 0,
+                        "download_response": "attachment" in headers.get("Content-Disposition", "").lower()}
             if response.status != 200:
                 return {**metadata, "status": "unknown", "reason": "페이지가 정상 HTML 응답을 반환하지 않았습니다."}
             if "attachment" in headers.get("Content-Disposition", "").lower():
@@ -77,7 +83,7 @@ async def request_html(url, hostname, port, addresses):
             return {**metadata, "status": "ok", "html": html, "bytes_read": len(data)}
 
 
-async def fetch_page(url):
+async def fetch_page(url, *, headers_only=False):
     async def follow():
         current = url
         chain = []
@@ -100,7 +106,10 @@ async def fetch_page(url):
             if unquote(parsed.path).lower().endswith(BINARY_SUFFIXES):
                 return {"status": "not_applicable", "reason": "파일 경로는 요청하지 않습니다.",
                         "final_url": normalized, "redirect_chain": chain}
-            response = await request_html(normalized, host, port, dns["addresses"])
+            if headers_only:
+                response = await request_html(normalized, host, port, dns["addresses"], headers_only=True)
+            else:
+                response = await request_html(normalized, host, port, dns["addresses"])
             chain.append({"url": normalized, "http_status": response["http_status"]})
             if response["http_status"] not in REDIRECT_CODES:
                 return {**response, "final_url": normalized, "redirect_chain": chain}
