@@ -1,5 +1,5 @@
 """Versioned server-owned scores: max AI behavior + TLS + domain age, never URL/brand heuristics."""
-from app.behavior import ATTACK_NAMES, SEVERITY_POINTS, unknown_attacks
+from app.behavior import ATTACK_NAMES, SEVERITY_POINTS, assessment_complete, unknown_attacks
 
 SCORE_VERSION = "behavior-v1"
 
@@ -82,8 +82,19 @@ def combine_page(result, page, target=None):
     blocked = page["status"] == "blocked" or (target is not None and not target["navigation_allowed"])
     evidence_complete = result.get("evidence_complete", False) and (target is None or target.get("evidence_complete", False))
     behavior_complete = (page["status"] == "ok" and not page.get("meta_refresh", False)
-                         and assessed and all(a["severity"] != "unknown" for a in attacks))
+                         and page.get("readable") is not False and assessed and assessment_complete(attacks))
     scored = finalize(components, reasons, attacks, evidence_complete=evidence_complete,
                       behavior_complete=behavior_complete,
                       navigation_allowed=result["navigation_allowed"] and not blocked)
     return {**result, **scored, "page": page}
+
+
+def metadata_only_result(result):
+    """Current public API policy: page AI is reference-only, never a scored input."""
+    components = {"ai_behavior": None, "tls": result["components"].get("tls"),
+                  "domain_age": result["components"].get("domain_age")}
+    reasons = [dict(r) for r in result.get("reasons", []) if not r["code"].startswith("AI_")]
+    scored = finalize(components, reasons, result.get("attack_types", unknown_attacks()),
+                      evidence_complete=result.get("evidence_complete", False),
+                      behavior_complete=True, navigation_allowed=result["navigation_allowed"])
+    return {**result, **scored, "score_version": "metadata-v2", "score_scope": "tls_domain_age"}

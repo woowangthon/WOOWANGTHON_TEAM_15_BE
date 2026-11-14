@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
+from tests.domain_mocks import install_domain_mock
 
 from app.ai import summary_for_ai
 from app.brand_ocr import parse_ocr
@@ -56,6 +57,7 @@ class OCRParseTests(unittest.TestCase):
 
 class AnalyzeAPITests(unittest.TestCase):
     def setUp(self):
+        self.domain_search = install_domain_mock(self)
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 

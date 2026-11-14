@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
+from tests.domain_mocks import install_domain_mock
 
 from app.main import app
 from app.services.brand_alias import expand_brand_texts, find_registered
@@ -43,6 +44,7 @@ class FindRegisteredTests(unittest.TestCase):
 
 class AliasAPITests(unittest.TestCase):
     def setUp(self):
+        self.domain_search = install_domain_mock(self)
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 

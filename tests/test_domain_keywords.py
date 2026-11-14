@@ -4,6 +4,7 @@ import unittest
 from unittest.mock import AsyncMock, patch
 
 from fastapi.testclient import TestClient
+from tests.domain_mocks import install_domain_mock
 
 from app.ai import summary_for_ai
 from app.main import app
@@ -58,6 +59,7 @@ class CheckerTests(unittest.TestCase):
 
 class VerdictAPITests(unittest.TestCase):
     def setUp(self):
+        self.domain_search = install_domain_mock(self)
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
@@ -71,10 +73,22 @@ class VerdictAPITests(unittest.TestCase):
     def test_brand_in_domain_is_danger_alone(self):
         data = self.post("https://naver-event.xyz")
         self.assertEqual(data["domain_keyword_check"]["brand_in_domain"],
-                         {"word": "naver", "official": ["naver.com"], "match": "contains", "found": "naver"})
-        self.assertIn("BRAND_IN_DOMAIN", self.codes(data))
+                         {"word": "네이버", "official": ["naver.com"], "match": "lookalike", "found": "naver-event.xyz"})
+        self.assertIn("BRAND_DOMAIN_MISMATCH", self.codes(data))
         self.assertEqual(data["verdict"]["level"], "위험")
         self.assertEqual(data["score"], 0)  # behavior-v1 unchanged
+
+    def test_lookalike_points_reach_the_public_api_verdict(self):
+        # Pattern detection alone is not enough: the score consumed by the app must include it.
+        for url in ["https://nav3r.com", "https://naevr.com", "https://navr.com",
+                    "https://edlya.com", "https://starbuks.co.kr"]:
+            with self.subTest(url=url):
+                data = self.post(url)
+                self.assertEqual(data["domain_keyword_check"]["brand_in_domain"]["match"], "lookalike")
+                self.assertEqual(data["verdict"]["score"], 50)
+                self.assertEqual(data["verdict"]["level"], "위험")
+                self.assertEqual(data["score"], 0)  # Legacy score is deliberately not the screen score.
+                self.assertTrue(summary_for_ai(data)["url_signals"]["brand_lookalike"])
 
     def test_phishing_word_domain_is_caution(self):
         data = self.post("https://secure-login-verify.com")

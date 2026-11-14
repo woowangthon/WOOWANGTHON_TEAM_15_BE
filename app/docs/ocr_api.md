@@ -157,3 +157,7 @@ curl.exe -X POST "http://127.0.0.1:8000/api/ocr/brands/local" -F "image=@C:/User
 CPU OCR은 `POST /api/ocr/brands/local` (multipart image)을 사용합니다.
 기존 `POST /api/ocr/brands` (JSON image_base64)은 BAZE 이미지 인식 API로 유지합니다.
 서로 다른 요청·응답 형식이므로 프론트에서 혼용하지 않습니다.
+
+## 공식 도메인 검색과 OCR 별칭의 구분
+
+QR 공식 도메인 판정은 [AI 웹 검색](ai_domain_verification.md)으로 전환했습니다. OCR의 registered는 기존 별칭 목록 표시용이며 미등록 상표도 AI 도메인 검색을 요청할 수 있습니다. 아래 CPU OCR용 정규화·별칭 데이터 요구 사항은 AI 공식 도메인 판정의 등록 요건이 아닙니다.

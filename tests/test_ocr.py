@@ -106,7 +106,8 @@ class OCRAPITests(unittest.TestCase):
         with patch("app.main.analyze_url", AsyncMock(return_value=base)):
             response = self.client.post("/api/analyze", json={"qr_text": url, "brand_texts": brand_texts, "include_ai": False})
         self.assertEqual(response.status_code, 200)
-        self.assertEqual(response.json()["url_analysis"]["risk_signals"]["brand_domain_status"], "matched")
+        self.assertEqual(response.json()["url_analysis"]["risk_signals"]["brand_domain_status"], "unknown")
+        self.assertEqual(response.json()["url_analysis"]["brand_domain"]["ai_status"], "disabled")
 
 
 class UploadLimitTests(unittest.IsolatedAsyncioTestCase):

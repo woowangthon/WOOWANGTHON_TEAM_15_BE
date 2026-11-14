@@ -1,4 +1,7 @@
-"""combined-v1: one overall verdict for the result screen and the AI explanation.
+"""Public metadata-v2 inputs yield combined-v2: page AI is excluded from scoring/completeness.
+Legacy behavior-v1 inputs retain combined-v1 for historical callers/tests.
+
+combined-v1: one overall verdict for the result screen and the AI explanation.
 
 behavior-v1 (score/level/components) is left unchanged. This adds the URL/brand/store signals that
 behavior-v1 deliberately excludes, so the screen, the score and the explanation say the same thing.
@@ -7,9 +10,11 @@ Rules
 - Start from behavior-v1 components (AI behavior <=60, TLS <=25, domain age <=15).
 - Add each URL signal at most once, checking both the scanned URL and the final URL after redirects
   (the worse of the two counts; nothing is added twice).
-- Total is capped at 100. Level: >=50 위험, 20-49 주의, <20 낮음 only when behavior-v1 was complete,
+- Total is capped at 100. Level: >=50 위험, 20-49 주의, <20 낮음 only when behavior and URL checks are complete,
   otherwise 확인 불가. A blocked target is always 위험.
 """
+
+from app.behavior import assessment_complete
 
 VERDICT_VERSION = "combined-v1"
 
@@ -19,7 +24,7 @@ VERDICT_VERSION = "combined-v1"
 SIGNAL_POINTS = {
     "BLOCKED_NAVIGATION": (50, "내부 네트워크 주소이거나 안전하지 않은 이동이라 접속을 막았습니다."),
     "EXECUTABLE_DOWNLOAD": (50, "앱·실행 파일을 내려받게 하는 주소입니다."),
-    "BRAND_DOMAIN_MISMATCH": (50, "상표의 공식 도메인과 다른 주소입니다."),
+    "BRAND_DOMAIN_MISMATCH": (50, "확인한 상표의 공식 도메인과 QR 주소가 다릅니다. 접속 전 확인이 필요합니다."),
     "STORE_DOMAIN_IMPERSONATION": (50, "등록된 매장 주소를 흉내 낸 도메인입니다."),
     "STORE_QR_MISMATCH": (25, "등록된 매장 QR 주소와 다릅니다."),
     # 주의 alone: a fake sticker on a genuine poster, but ordering/booking platforms also differ legitimately.
@@ -56,8 +61,23 @@ def _signal_codes(url_analysis):
     return codes
 
 
-def combined_verdict(result):
+def _url_checks_complete(analysis, brand_requested):
+    if not analysis or analysis.get("status") != "ok" or analysis.get("errors"):
+        return False
+    signals = analysis.get("risk_signals") or {}
+    return (signals.get("url_valid") is True
+            and isinstance(signals.get("suspicious_url_pattern"), bool)
+            and isinstance(signals.get("redirect_pattern_detected"), bool)
+            and (not brand_requested or signals.get("brand_domain_status") in {"matched", "mismatched"})
+            and ((analysis.get("brand_domain") or {}).get("source") != "ai_web_search"
+                 or signals.get("brand_domain_status") in {"matched", "mismatched"})
+            and signals.get("store_qr_status") not in {"unknown", "invalid_url"}
+            and signals.get("domain_impersonation_status") not in {"unknown", "invalid_url"})
+
+
+def combined_verdict(result, *, brand_requested=False):
     """result: the /api/analyze response (behavior-v1 fields + url_analysis/final_url_analysis/page)."""
+    metadata_only = result.get("score_scope") == "tls_domain_age"
     codes = _signal_codes(result.get("url_analysis")) | _signal_codes(result.get("final_url_analysis"))
     page = result.get("page") or {}
     if page.get("download_response"):
@@ -77,23 +97,50 @@ def combined_verdict(result):
     if "STORE_DOMAIN_IMPERSONATION" in codes:
         codes.discard("STORE_QR_MISMATCH")
 
+    # A poster's verified official address repeats the same brand mismatch evidence.
+    printed = set((result.get("printed_domain_check") or {}).get("printed", []))
+    for analysis in (result.get("url_analysis"), result.get("final_url_analysis")):
+        report = (analysis or {}).get("brand_domain") or {}
+        if report.get("status") == "mismatched" and printed.intersection(report.get("official_domains", [])):
+            codes.discard("PRINTED_DOMAIN_MISMATCH")
+
     signal_reasons = [{"code": code, "points": SIGNAL_POINTS[code][0], "message": SIGNAL_POINTS[code][1]}
                       for code in SIGNAL_POINTS if code in codes]
     base_reasons = [{"code": r["code"], "points": r["points"], "message": r["message"]}
-                    for r in result.get("reasons", []) if r.get("code") != "BLOCKED_TARGET"]
+                    for r in result.get("reasons", []) if r.get("code") != "BLOCKED_TARGET"
+                    and (not metadata_only or not r.get("code", "").startswith("AI_"))]
 
-    known = [v for v in (result.get("components") or {}).values() if v is not None]
+    components = result.get("components") or {}
+    keys = ("tls", "domain_age") if metadata_only else ("ai_behavior", "tls", "domain_age")
+    known = [components.get(k) for k in keys if components.get(k) is not None]
     signal_points = sum(r["points"] for r in signal_reasons)
     score = None if not known and not signal_reasons else min(100, sum(known) + signal_points)
+
+    # Missing information is not a threat signal and earns no invented penalty.
+    # It does, however, prevent a low-risk conclusion even when known points total zero.
+    complete = (result.get("assessment_status") == "complete"
+                and all((result.get("components") or {}).get(k) is not None
+                        for k in ("ai_behavior", "tls", "domain_age"))
+                and assessment_complete(result.get("attack_types") or [])
+                and _url_checks_complete(result.get("url_analysis"), brand_requested))
+    if metadata_only:
+        complete = (result.get("evidence_complete", False)
+                    and all(components.get(k) is not None for k in keys)
+                    and _url_checks_complete(result.get("url_analysis"), brand_requested))
+    final = result.get("final_url_analysis")
+    if final is not None or (page.get("final_url") and page["final_url"] != result.get("url")):
+        complete = complete and _url_checks_complete(final, brand_requested)
+    assessment_status = "complete" if complete else "partial" if score is not None else "failed"
 
     if "BLOCKED_NAVIGATION" in codes or (score is not None and score >= 50):
         level = "위험"
     elif score is not None and score >= 20:
         level = "주의"
-    elif score is not None and result.get("assessment_status") == "complete":
+    elif score is not None and assessment_status == "complete":
         level = "낮음"
     else:
         level = "확인 불가"
 
     reasons = sorted(signal_reasons + base_reasons, key=lambda r: -r["points"])
-    return {"version": VERDICT_VERSION, "score": score, "level": level, "reasons": reasons}
+    return {"version": "combined-v2" if metadata_only else VERDICT_VERSION, "score": score, "level": level,
+            "assessment_status": assessment_status, "reasons": reasons}

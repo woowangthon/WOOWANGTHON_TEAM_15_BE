@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
+from tests.domain_mocks import install_domain_mock
 
 from app.behavior import ATTACK_TYPES
 from app.main import app
@@ -24,13 +25,14 @@ def metadata(url, age=400, blocked=False):
 
 class CombinedAnalysisTests(unittest.TestCase):
     def setUp(self):
+        self.domain_search = install_domain_mock(self, standalone=True)
         _cache.clear()
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
     def test_same_shared_results_with_store_id_and_brand_texts(self):
         url = "https://menu.example.com/store/demo-cafe-01?table=3"
-        body = {"qr_text": url, "brand_texts": ["테스트브랜드"], "store_id": "demo-cafe-01"}
+        body = {"qr_text": url, "brand_texts": ["테스트브랜드"], "store_id": "demo-cafe-01", "include_ai": True}
         with patch("app.main.analyze_url", AsyncMock(return_value=metadata(url))), patch("httpx.AsyncClient.post", AsyncMock()) as post:
             combined = self.client.post("/api/analyze", json=body)
             standalone = self.client.post("/api/url/analyze", json=body)
@@ -42,9 +44,9 @@ class CombinedAnalysisTests(unittest.TestCase):
         self.assertEqual(data["url_analysis"]["risk_signals"]["store_qr_status"], "matched")
         self.assertFalse(data["url_analysis"]["risk_signals"]["store_data_verified"])
         self.assertEqual(data["score"], 0)
-        self.assertEqual(data["assessment_status"], "partial")
+        self.assertEqual(data["assessment_status"], "complete")
         self.assertIsNone(data["final_url_analysis"])
-        self.assertEqual(data["score_scope"], "ai_behavior_tls_domain_age")
+        self.assertEqual(data["score_scope"], "tls_domain_age")
         post.assert_not_called()
 
     def test_pattern_codes_are_stable_and_do_not_change_v1_points(self):
@@ -59,8 +61,8 @@ class CombinedAnalysisTests(unittest.TestCase):
                          ["SHORT_URL", "EXECUTABLE_LINK", "EXECUTABLE_QUERY"])
         self.assertTrue(data["url_analysis"]["risk_signals"]["suspicious_url_pattern"])
         self.assertEqual(data["score"], 0)
-        self.assertEqual(data["score_version"], "behavior-v1")
-        self.assertIn("behavior-v1", data["warning"])
+        self.assertEqual(data["score_version"], "metadata-v2")
+        self.assertIn("페이지 AI", data["warning"])
         post.assert_not_called()
 
     def test_ai_pipeline_and_redirect_url_checks_are_combined_without_double_counting(self):
@@ -85,15 +87,15 @@ class CombinedAnalysisTests(unittest.TestCase):
                 "inspect_page": True, "include_ai": True})
         self.assertEqual(response.status_code, 200)
         data = response.json()
-        self.assertEqual(data["score"], 75)
-        self.assertEqual(data["components"], {"ai_behavior": 60, "tls": 0, "domain_age": 15})
+        self.assertEqual(data["score"], 15)
+        self.assertEqual(data["components"], {"ai_behavior": None, "tls": 0, "domain_age": 15})
         self.assertEqual(data["assessment_status"], "complete")
         self.assertEqual(data["ai_status"], "generated")
         self.assertEqual(data["url_analysis"]["risk_signals"]["pattern_codes"], ["SHORT_URL"])
         self.assertEqual(data["final_url_analysis"]["risk_signals"]["store_qr_status"], "matched")
         self.assertFalse(data["final_url_analysis"]["risk_signals"]["store_data_verified"])
         self.assertFalse(data["auto_open"])
-        self.assertEqual(sum(r["points"] for r in data["reasons"]), 75)
+        self.assertEqual(sum(r["points"] for r in data["reasons"]), 15)
         fetch.assert_awaited_once_with(source)
         post.assert_awaited_once()
 
@@ -109,8 +111,8 @@ class CombinedAnalysisTests(unittest.TestCase):
         data = response.json()
         local = data["url_analysis"]
         self.assertEqual(local["status"], "partial")
-        self.assertEqual(local["errors"], ["BRAND_DB_UNAVAILABLE", "STORE_DB_UNAVAILABLE", "IMPERSONATION_DB_UNAVAILABLE"])
-        self.assertEqual(local["risk_signals"]["brand_domain_status"], "unknown")
+        self.assertEqual(local["errors"], ["STORE_DB_UNAVAILABLE", "IMPERSONATION_DB_UNAVAILABLE"])
+        self.assertEqual(local["risk_signals"]["brand_domain_status"], "matched")
         self.assertIsNone(local["risk_signals"]["store_data_verified"])
         self.assertEqual(local["risk_signals"]["pattern_codes"], ["EXECUTABLE_LINK"])
         self.assertNotIn("private-path", json.dumps(data))

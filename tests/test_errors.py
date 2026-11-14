@@ -37,5 +37,23 @@ class ErrorFormatTests(unittest.TestCase):
         self.assertIn("code", response.json())
 
 
+    def test_qr_and_local_ocr_keep_distinct_limits_with_common_errors(self):
+        # 4.5MB exceeds the QR JSON limit but fits the 5MiB local OCR limit.
+        qr = self.client.post("/api/qr/decode", headers={"content-length": "4500000"}, content=b"{}")
+        self.assertEqual(qr.status_code, 413)
+        self.assertEqual(qr.json()["code"], "PAYLOAD_TOO_LARGE")
+        local = self.client.post("/api/ocr/brands/local", headers={"content-length": "4500000"}, content=b"{}")
+        self.assertEqual(local.status_code, 422)
+        self.assertEqual(local.json()["code"], "VALIDATION_ERROR")
+        self.assertIsInstance(local.json()["detail"], str)
+
+    def test_chunked_qr_body_limit_also_uses_common_errors(self):
+        chunks = (b"x" * 2_200_001 for _ in range(2))
+        response = self.client.post("/api/qr/decode", content=chunks)
+        self.assertEqual(response.status_code, 413)
+        self.assertEqual(response.json()["code"], "PAYLOAD_TOO_LARGE")
+        self.assertIsInstance(response.json()["detail"], str)
+
+
 if __name__ == "__main__":
     unittest.main()

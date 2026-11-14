@@ -50,7 +50,7 @@ def check_suspicious_patterns(qr_text: str) -> dict:
     # 3. 단축 URL 검사
     short_domains = {
         "bit.ly", "tinyurl.com", "t.co", "is.gd",
-        "cutt.ly", "rebrand.ly"
+        "cutt.ly", "rebrand.ly", "m.site.naver.com", "naver.me"
     }
 
     if hostname in short_domains:
