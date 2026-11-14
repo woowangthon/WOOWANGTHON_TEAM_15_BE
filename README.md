@@ -1,5 +1,20 @@
 # QR Alert FastAPI backend
 
+## 현재 점수 정책 (metadata-v2 / combined-v2)
+
+현재 POST /api/analyze는 페이지 AI 행동 분석을 점수 및 검사 완료 조건에서 제외합니다.
+루트 score는 TLS·도메인 생성일만 반영하고, 앱은 URL·공식 도메인·인쇄 주소·매장 신호를 더한 verdict.score를 표시합니다.
+페이지 AI는 참고 정보로만 남고, 강한 위험/확인 불가 모두 점수와 종합 등급에 영향을 주지 않습니다.
+공식 도메인 AI 검색은 계속 점수에 반영됩니다. TLS/RDAP/국가/공식 도메인 등 남은 필수 검사의 미확인은 유지됩니다.
+점수 버전은 score_version=metadata-v2, score_scope=tls_domain_age, verdict.version=combined-v2입니다.
+아래 behavior-v1/combined-v1 설명과 예시는 이전 정책의 기록입니다. [현재 정책과 검증](app/docs/metadata_scoring.md)을 먼저 참고하세요.
+
+
+현재 QR 공식 도메인 판정은 **고정 JSON 비교 대신 매 스캔의 BAZE AI 웹 검색**을 사용합니다.
+상표 미입력·기존 DB 미등록 상표도 검색하며, 출처가 부족하면 확인 불가로 남깁니다.
+설정·출처 검증·점수 및 API 차이: [AI 도메인 확인](app/docs/ai_domain_verification.md).
+공식 소유 관계 확인은 사이트의 합법성이나 전체 안전을 보증하지 않습니다.
+
 이 저장소는 QR의 HTTP(S) URL을 받아 서버에서 도메인·TLS·IP 국가 정보를 조회하고,
 선택적으로 정적 HTML과 AI를 이용해 요구 행동의 위험도를 평가합니다.
 휴대폰 앱은 URL을 보내고 JSON을 받습니다. 2번의 URL 패턴·브랜드·매장 검사는
@@ -77,7 +92,8 @@ Expo Go에는 기기 내 OCR이 없어 서버의 AI 이미지 인식으로 상�
 - 사진 한 장당 유료 AI 호출 1회가 발생합니다.
 
 URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습니다.
-이 검사는 대상 사이트에 접속하지 않으며 점수를 산정하지 않습니다.
+`/api/url/analyze`는 기본적으로 외부 요청 없이 패턴·매장 검사를 하며 공식 도메인은 확인 불가입니다.
+`include_ai=true`이면 검색 제공자를 통해 공식 도메인을 확인합니다. 이 API 자체는 점수를 산정하지 않습니다.
 `risk_signals`를 기존 `behavior-v1` 점수에 자동으로 합산하지 않습니다.
 `/api/analyze`는 서버 내부에서 같은 `analyze_url_signals()` 공통 함수를 호출합니다.
 `/api/url/analyze`는 URL 검사만 필요한 경우에 사용하며 서버가 자기 API를 HTTP로 호출하지 않습니다.
@@ -125,7 +141,7 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 ## combined-v1 종합 판정 (`verdict`)
 
 결과 화면 배너와 AI 결과 설명은 응답의 `verdict`를 따릅니다. 기존 `score`/`level`(behavior-v1)은 바꾸지 않고 그대로 반환합니다.
-구현: `app/verdict.py`, 테스트: `tests/test_verdict.py`.
+구현: `app/verdict.py`, 테스트: `tests/test_verdict.py`. 공식 도메인·사칭 근거는 현재 `app/domain_ai.py`의 AI 검색 판정을 사용합니다.
 
 종합 점수 = behavior-v1 구성 점수(AI 행동 ≤60 + TLS ≤25 + 도메인 생성일 ≤15) + 아래 URL 신호 점수, 최대 100.
 
@@ -133,7 +149,7 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 | -------------------------- | ---- | ------------------------------------------------------------------------------------- |
 | BLOCKED_NAVIGATION         | 50   | navigation_allowed=false (내부망 주소, HTTPS→HTTP 이동 등). 점수와 상관없이 항상 위험 |
 | EXECUTABLE_DOWNLOAD        | 50   | EXECUTABLE_LINK/EXECUTABLE_QUERY 또는 page.download_response                          |
-| BRAND_DOMAIN_MISMATCH      | 50   | brand_domain_status=mismatched                                                        |
+| BRAND_DOMAIN_MISMATCH      | 50   | AI 검색 근거가 있는 사칭 의심(brand_domain_status=mismatched)                                                        |
 | STORE_DOMAIN_IMPERSONATION | 50   | domain_impersonation_status=impersonation_suspected                                   |
 | STORE_QR_MISMATCH          | 25   | store_qr_status=mismatched (위장 도메인으로 이미 잡히면 중복 가산 안 함)              |
 | PRINTED_DOMAIN_MISMATCH    | 25   | printed_domain_check.status=mismatched (QR 주변 인쇄 주소와 QR 주소가 다름)          |
@@ -152,8 +168,14 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 - `path_keywords`: 하위 도메인·경로·쿼리(`login.example.org/account`)의 단어는 정상 사이트에도 흔해 참고로만 반환합니다.
 - 설명 AI에는 해당 여부만 보내고 단어·도메인 자체는 보내지 않습니다.
 
+- HTTP QR 분석에서 상표 사칭은 AI 검색 출처로 판단합니다. 위의 로컬 도메인 단어·오타 함수 설명은 레거시 오프라인 검사에 해당하며, 현재 HTTP 경로는 고정 상표 DB를 읽지 않습니다.
 - 입력 주소와 최종 이동 주소의 신호는 합쳐서 신호마다 한 번만 더합니다.
-- 50 이상 위험, 20~49 주의, 20 미만은 behavior-v1 assessment_status=complete일 때만 낮음, 그 외 확인 불가.
+- 50 이상 위험, 20~49 주의, 20 미만은 `verdict.assessment_status=complete`일 때만 낮음, 그 외 확인 불가.
+- `verdict.assessment_status`는 behavior-v1 검사 완료 여부와 입력·최종 URL 검사 성공 여부를 함께 반영합니다. 요청한 상표 비교의 결과가 unknown이거나 DB 조회가 실패하면 미완료입니다. 상표를 입력하지 않아 비교하지 않은 경우는 선택 검사 생략입니다.
+- unknown·조회 실패는 악성 근거가 아니므로 임의의 벌점을 추가하지 않습니다. 0점도 미완료라면 안전 판정이 아닙니다. 모든 점수 항목이 미측정이면 score=null입니다.
+- AI 네 유형이 각각 한 번씩 평가되어야 완료입니다. 빈 배열·중복·누락·unknown 또는 읽지 못한 페이지는 정상 판정으로 처리하지 않습니다.
+- `m.site.naver.com`(네이버 QR 중계)과 `naver.me`도 SHORT_URL 20점에 포함합니다. 정상 서비스라도 목적지를 숨기는 구조에 대한 주의이며 악성 확률 20%라는 뜻은 아닙니다.
+- 프론트는 검사 실패를 ‘확인 불가’, 선택 검사 생략을 ‘미검사’, 조사 범위에서 신호가 없으면 ‘신호 미발견’, 인증서·생성일 등 조회 성공은 ‘확인됨’으로 구분합니다. 미완료 점수에는 ‘확인된 위험 점수’와 누락 항목을 표시합니다.
 - 배점 기준: 그 신호 하나만으로 접속을 말려야 하는 경우(다운로드·사칭·차단)는 단독으로 위험(50), 목적지를 숨기는 신호는 단독으로 주의(20).
 - 해외 IP는 behavior-v1과 같이 0점(정보만 표시)입니다.
 - 이 배점값은 `SIGNAL_POINTS` 한 곳에서 바꿉니다.
