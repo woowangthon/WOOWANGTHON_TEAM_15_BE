@@ -61,44 +61,6 @@ CORS_ORIGINS=http://localhost:8081
 국가 DB는 MaxMind GeoLite2 Country MMDB를 별도 확보하고 최신으로 갱신하세요.
 데이터 출처: MaxMind, https://www.maxmind.com . 서비스 배포 시 이용·출처 표시 조건을 확인하세요.
 
-## URL 패턴·매장 검사 API (2번 담당)
-
-같은 FastAPI 서버에 다음 API를 함께 등록합니다.
-
-| 경로                                        | 기능                                                              |
-| ------------------------------------------- | ----------------------------------------------------------------- |
-| `POST /api/analyze`                         | URL·브랜드·매장 검사 + 도메인·TLS·국가 정보 + 선택적 AI 행동 점수 |
-| `POST /api/url/analyze`                     | URL 패턴·브랜드·매장 QR 비교 및 `risk_signals`                    |
-| `GET /api/stores/search?keyword=테스트카페` | 등록된 매장 이름 검색                                             |
-| `POST /api/ocr/brands`                      | 사진 속 상표명 후보 읽기 (AI 이미지 인식, 아래 참고)              |
-
-### 사진 속 상표명 읽기 (`POST /api/ocr/brands`)
-Expo Go에는 기기 내 OCR이 없어 서버의 AI 이미지 인식으로 상표명 후보를 읽습니다. 현재 앱이 사용하는 구현: `app/brand_ocr.py`, 테스트: `tests/test_brand_ocr.py`. BAZE_VISION_MODEL을 지정하면 OCR에만 별도 모델을 사용할 수 있고, 비우면 BAZE_MODEL을 사용합니다.
-```json
-{"image_base64": "<JPG/PNG/WebP base64, 원본 3MB 이하>"}
-```
-응답: `{"status": "ok|unavailable|invalid_image", "brands": [{"name": "스타벅스", "registered": true}], "domains": [{"text": "www.starbucks.co.kr", "domain": "starbucks.co.kr"}], "message": null}`
-- `domains`는 사진에 글자로 인쇄된 웹 주소입니다(QR 무늬 안의 내용이 아님). 등록 도메인으로 정리해 최대 5개 반환합니다.
-- 사용자가 "사진에서 찾기"를 누르거나, 앱에서 "QR 사진으로 상표·주소도 찾기"를 켰을 때만 전송합니다. 사진은 AI 게이트웨이에 한 번 보내고 저장·로그·캐시하지 않습니다.
-
-### 인쇄된 주소와 QR 주소 비교 (`printed_domains`)
-`POST /api/analyze`에 `printed_domains`(최대 10개)를 보내면 QR 주소(리디렉션 후 최종 주소 포함)의 등록 도메인과 비교해
-`printed_domain_check`(`matched`/`mismatched`/`not_checked`)를 반환합니다. 진짜 안내문 위에 가짜 QR 스티커를 덧붙인 경우를 잡기 위한 신호입니다.
-불일치는 종합 판정에 PRINTED_DOMAIN_MISMATCH(25점, 단독으로 주의)로 반영합니다. 주문·예약 대행 서비스처럼 정상적으로 다른 경우도 있어 위험이 아닌 주의로 둡니다.
-설명 AI에는 상태(printed_domain_status)만 보내고 인쇄된 주소 자체는 보내지 않습니다. 구현: `app/services/printed_domain.py`, 테스트: `tests/test_printed_domain.py`.
-- 후보는 최대 5개·각 30자 이하이고, 공식 도메인 DB에 있는 이름(registered=true)이 앞에 옵니다. 앱은 후보를 보여주기만 하고, 사용자가 고른 이름만 brand_texts로 보냅니다.
-- 사진 속 글자가 지시문이어도 따르지 않도록 프롬프트에 명시하고, 응답은 JSON 형식·길이·URL 포함 여부로 검증합니다.
-- 기본 모델은 BAZE_MODEL이며, 다른 이미지 모델을 쓰려면 `.env`에 `BAZE_VISION_MODEL`을 지정합니다.
-- 사진 한 장당 유료 AI 호출 1회가 발생합니다.
-
-URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습니다.
-`/api/url/analyze`는 기본적으로 외부 요청 없이 패턴·매장 검사를 하며 공식 도메인은 확인 불가입니다.
-`include_ai=true`이면 검색 제공자를 통해 공식 도메인을 확인합니다. 이 API 자체는 점수를 산정하지 않습니다.
-`risk_signals`를 기존 `behavior-v1` 점수에 자동으로 합산하지 않습니다.
-`/api/analyze`는 서버 내부에서 같은 `analyze_url_signals()` 공통 함수를 호출합니다.
-`/api/url/analyze`는 URL 검사만 필요한 경우에 사용하며 서버가 자기 API를 HTTP로 호출하지 않습니다.
-상세 명세는 [위험 신호 데이터 명세](app/docs/risk_signals_contract.md)를 참고하세요.
-
 ## 공통 규칙 (기본 주소·인증·오류 형식)
 
 **기본 주소**: 운영 서버는 아직 없습니다. 개발 중에는 서버를 실행한 PC의 `http://<PC IP>:8000`을 씁니다(같은 Wi-Fi, 방화벽 8000 허용).
@@ -157,6 +119,77 @@ include_explanation 기본값 false. true이고 include_ai=true이면 완성된 
 include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산출하지 않습니다.
 잘못된 스킴/사용자 정보/80·443 외 포트/입력 형식은 422를 반환합니다.
 
+## URL 패턴·매장 검사 API (2번 담당)
+
+같은 FastAPI 서버에 다음 API를 함께 등록합니다.
+
+| 경로                                        | 기능                                                              |
+| ------------------------------------------- | ----------------------------------------------------------------- |
+| `POST /api/analyze`                         | URL·브랜드·매장 검사 + 도메인·TLS·국가 정보 + 선택적 AI 행동 점수 |
+| `POST /api/url/analyze`                     | URL 패턴·브랜드·매장 QR 비교 및 `risk_signals`                    |
+| `GET /api/stores/search?keyword=테스트카페` | 등록된 매장 이름 검색                                             |
+| `POST /api/ocr/brands`                      | 사진 속 상표명 후보 읽기 (AI 이미지 인식, 아래 참고)              |
+
+URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습니다.
+`/api/url/analyze`는 기본적으로 외부 요청 없이 패턴·매장 검사를 하며 공식 도메인은 확인 불가입니다.
+`include_ai=true`이면 검색 제공자를 통해 공식 도메인을 확인합니다. 이 API 자체는 점수를 산정하지 않습니다.
+`risk_signals`를 기존 `behavior-v1` 점수에 자동으로 합산하지 않습니다.
+`/api/analyze`는 서버 내부에서 같은 `analyze_url_signals()` 공통 함수를 호출합니다.
+`/api/url/analyze`는 URL 검사만 필요한 경우에 사용하며 서버가 자기 API를 HTTP로 호출하지 않습니다.
+상세 명세는 [위험 신호 데이터 명세](app/docs/risk_signals_contract.md)를 참고하세요.
+
+### 사진 속 상표명 읽기 (`POST /api/ocr/brands`)
+Expo Go에는 기기 내 OCR이 없어 서버의 AI 이미지 인식으로 상표명 후보를 읽습니다. 현재 앱이 사용하는 구현: `app/brand_ocr.py`, 테스트: `tests/test_brand_ocr.py`. BAZE_VISION_MODEL을 지정하면 OCR에만 별도 모델을 사용할 수 있고, 비우면 BAZE_MODEL을 사용합니다.
+```json
+{"image_base64": "<JPG/PNG/WebP base64, 원본 3MB 이하>"}
+```
+응답: `{"status": "ok|unavailable|invalid_image", "brands": [{"name": "스타벅스", "registered": true}], "domains": [{"text": "www.starbucks.co.kr", "domain": "starbucks.co.kr"}], "message": null}`
+- `domains`는 사진에 글자로 인쇄된 웹 주소입니다(QR 무늬 안의 내용이 아님). 등록 도메인으로 정리해 최대 5개 반환합니다.
+- 사용자가 "사진에서 찾기"를 누르거나, 앱에서 "QR 사진으로 상표·주소도 찾기"를 켰을 때만 전송합니다. 사진은 AI 게이트웨이에 한 번 보내고 저장·로그·캐시하지 않습니다.
+
+- 후보는 최대 5개·각 30자 이하이고, 공식 도메인 DB에 있는 이름(registered=true)이 앞에 옵니다. 앱은 후보를 보여주기만 하고, 사용자가 고른 이름만 brand_texts로 보냅니다.
+- 사진 속 글자가 지시문이어도 따르지 않도록 프롬프트에 명시하고, 응답은 JSON 형식·길이·URL 포함 여부로 검증합니다.
+- 기본 모델은 BAZE_MODEL이며, 다른 이미지 모델을 쓰려면 `.env`에 `BAZE_VISION_MODEL`을 지정합니다.
+- 사진 한 장당 유료 AI 호출 1회가 발생합니다.
+
+### 인쇄된 주소와 QR 주소 비교 (`printed_domains`)
+`POST /api/analyze`에 `printed_domains`(최대 10개)를 보내면 QR 주소(리디렉션 후 최종 주소 포함)의 등록 도메인과 비교해
+`printed_domain_check`(`matched`/`mismatched`/`not_checked`)를 반환합니다. 진짜 안내문 위에 가짜 QR 스티커를 덧붙인 경우를 잡기 위한 신호입니다.
+불일치는 종합 판정에 PRINTED_DOMAIN_MISMATCH(25점, 단독으로 주의)로 반영합니다. 주문·예약 대행 서비스처럼 정상적으로 다른 경우도 있어 위험이 아닌 주의로 둡니다.
+설명 AI에는 상태(printed_domain_status)만 보내고 인쇄된 주소 자체는 보내지 않습니다. 구현: `app/services/printed_domain.py`, 테스트: `tests/test_printed_domain.py`.
+
+## 사진에서 상표명 OCR
+
+`POST /api/ocr/brands/local`에 JPEG/PNG 사진을 multipart 파일 필드 `image`로 보내면,
+한국어·영어 글자와 등록된 브랜드 후보를 반환합니다. 후보를 확인한 뒤 기존 `/api/analyze`에 brand_texts로 전달하세요.
+
+- EasyOCR CPU 실행, 별도 OCR API 키·BAZE 호출 없음.
+- 최대 5MiB·1,600만 화소, 방향 보정 및 긴 변 1,600픽셀 축소.
+- 낮은 신뢰도·여러 브랜드·미등록 브랜드를 구분하며, 인식 결과는 자동 확정하지 않음.
+- OCR 모델은 한 번 준비하고 재사용. 일반 요청에서는 모델 다운로드를 하지 않음.
+- 기본 requirements에 더해 requirements-ocr.txt 설치와 모델 준비가 필요함.
+
+```powershell
+.\.venv\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
+.\.venv\Scripts\python.exe -m pip install -r requirements-ocr.txt
+.\.venv\Scripts\python.exe -B -m scripts.setup_ocr --download-models
+```
+
+서버를 켠 뒤 `/docs`에서 파일 업로드로 테스트하거나 다음 명령으로 사진을 직접 검사할 수 있습니다.
+
+```powershell
+.\.venv\Scripts\python.exe -B -m scripts.check_ocr "C:/Users/User/Desktop/brand.jpg"
+```
+
+[OCR 요청·응답과 프론트 연결 방법](app/docs/ocr_api.md)에 설치, 상태 코드, 브랜드 별칭 추가 방법을 정리했습니다.
+
+## 단축 링크 해제 후 2번 검사
+
+POST /api/url/analyze에 `resolve_redirects: true`를 추가하면, 서버가 HTTP 이동을 확인한 뒤
+최종 주소의 URL 패턴·브랜드·매장 검사 결과를 `final_url_analysis`로 함께 반환합니다.
+기본값 false에서는 기존의 로컬 검사 동작을 유지합니다. AI 호출은 사용하지 않습니다.
+요청 예시와 상태·제한은 [단축 링크 연결 명세](app/docs/url_resolution.md)를 참고하세요.
+
 ## 통합 응답의 URL 검사 결과
 
 - `url_analysis`: 입력 URL의 패턴·브랜드·매장 검사 상세와 `risk_signals`.
@@ -168,142 +201,6 @@ include_ai=false이면 페이지 수집을 요청해도 AI 행동 점수를 산�
 - 로컬 DB 읽기/해석 실패 시 해당 검사는 unknown, URL 검사 status는 partial, errors에는 실패 코드가 반환됩니다.
 - store_data_verified=null은 매장 검사 미수행/조회 실패, false는 조회된 검증 상태가 미검증임을 뜻합니다.
 - 최종 주소의 URL 검사는 추가 HTTP/AI 요청을 하지 않으며 입력 주소와 최종 주소의 신호를 중복 가산하지 않습니다.
-
-## combined-v1 종합 판정 (`verdict`)
-
-결과 화면 배너와 AI 결과 설명은 응답의 `verdict`를 따릅니다. 기존 `score`/`level`(behavior-v1)은 바꾸지 않고 그대로 반환합니다.
-구현: `app/verdict.py`, 테스트: `tests/test_verdict.py`. 공식 도메인·사칭 근거는 현재 `app/domain_ai.py`의 AI 검색 판정을 사용합니다.
-
-종합 점수 = behavior-v1 구성 점수(AI 행동 ≤60 + TLS ≤25 + 도메인 생성일 ≤15) + 아래 URL 신호 점수, 최대 100.
-
-| 코드                       | 점수 | 조건                                                                                  |
-| -------------------------- | ---- | ------------------------------------------------------------------------------------- |
-| BLOCKED_NAVIGATION         | 50   | navigation_allowed=false (내부망 주소, HTTPS→HTTP 이동 등). 점수와 상관없이 항상 위험 |
-| EXECUTABLE_DOWNLOAD        | 50   | EXECUTABLE_LINK/EXECUTABLE_QUERY 또는 page.download_response                          |
-| BRAND_DOMAIN_MISMATCH      | 50   | AI 검색 근거가 있는 사칭 의심(brand_domain_status=mismatched)                                                        |
-| STORE_DOMAIN_IMPERSONATION | 50   | domain_impersonation_status=impersonation_suspected                                   |
-| STORE_QR_MISMATCH          | 25   | store_qr_status=mismatched (위장 도메인으로 이미 잡히면 중복 가산 안 함)              |
-| PRINTED_DOMAIN_MISMATCH    | 25   | printed_domain_check.status=mismatched (QR 주변 인쇄 주소와 QR 주소가 다름)          |
-| SHORT_URL                  | 20   | 단축 URL                                                                              |
-| IP_LITERAL                 | 20   | IP 주소형 URL                                                                         |
-| REDIRECT_PARAMETER         | 20   | redirect_pattern_detected=true                                                        |
-| BRAND_IN_DOMAIN            | 50   | 공식 도메인 DB의 상표 단어(naver, starbucks 등)가 공식이 아닌 도메인에 포함 (입력 상표·매장 사칭으로 이미 잡히면 중복 가산 안 함) |
-| PHISHING_KEYWORD_DOMAIN    | 20   | 등록 도메인 이름에 login·verify·secure·refund·delivery 등 낚시성 단어                 |
-
-`domain_keyword_check`(`app/services/domain_keywords.py`, 테스트 `tests/test_domain_keywords.py`)
-- `brand_in_domain`: 상표 단어는 공식 도메인 DB에서 가져옵니다(`naver.com` → `naver`, 4글자 이상, 데모 항목 제외). 그 상표의 공식 도메인과 하위 도메인은 제외합니다.
-- 오타·비슷한 글자로 흉내 낸 도메인(`nav3r.com`, `starbuks.co.kr`, `edlya.com`)도 `brand_in_domain`(`match: lookalike`)으로 잡습니다.
-  3↔e, 0↔o, 1·i↔l, rn↔m 등 헷갈리는 글자를 같게 본 뒤, 8글자 이상 상표는 2글자까지, 짧은 상표는 글자 순서 바뀜·1글자 추가/누락만 허용합니다
-  (짧은 상표에서 다른 글자로 바꾼 경우는 never·saver 같은 일반 단어와 겹쳐 제외). 5글자 미만 상표는 비교하지 않습니다.
-- `domain_keywords`: 등록 도메인 이름(`secure-login-verify.com`)에 있을 때만 점수에 반영합니다.
-- `path_keywords`: 하위 도메인·경로·쿼리(`login.example.org/account`)의 단어는 정상 사이트에도 흔해 참고로만 반환합니다.
-- 설명 AI에는 해당 여부만 보내고 단어·도메인 자체는 보내지 않습니다.
-
-- HTTP QR 분석에서 상표 사칭은 AI 검색 출처로 판단합니다. 위의 로컬 도메인 단어·오타 함수 설명은 레거시 오프라인 검사에 해당하며, 현재 HTTP 경로는 고정 상표 DB를 읽지 않습니다.
-- 입력 주소와 최종 이동 주소의 신호는 합쳐서 신호마다 한 번만 더합니다.
-- 50 이상 위험, 20~49 주의, 20 미만은 `verdict.assessment_status=complete`일 때만 낮음, 그 외 확인 불가.
-- `verdict.assessment_status`는 behavior-v1 검사 완료 여부와 입력·최종 URL 검사 성공 여부를 함께 반영합니다. 요청한 상표 비교의 결과가 unknown이거나 DB 조회가 실패하면 미완료입니다. 상표를 입력하지 않아 비교하지 않은 경우는 선택 검사 생략입니다.
-- unknown·조회 실패는 악성 근거가 아니므로 임의의 벌점을 추가하지 않습니다. 0점도 미완료라면 안전 판정이 아닙니다. 모든 점수 항목이 미측정이면 score=null입니다.
-- AI 네 유형이 각각 한 번씩 평가되어야 완료입니다. 빈 배열·중복·누락·unknown 또는 읽지 못한 페이지는 정상 판정으로 처리하지 않습니다.
-- `m.site.naver.com`(네이버 QR 중계)과 `naver.me`도 SHORT_URL 20점에 포함합니다. 정상 서비스라도 목적지를 숨기는 구조에 대한 주의이며 악성 확률 20%라는 뜻은 아닙니다.
-- 프론트는 검사 실패를 ‘확인 불가’, 선택 검사 생략을 ‘미검사’, 조사 범위에서 신호가 없으면 ‘신호 미발견’, 인증서·생성일 등 조회 성공은 ‘확인됨’으로 구분합니다. 미완료 점수에는 ‘확인된 위험 점수’와 누락 항목을 표시합니다.
-- 배점 기준: 그 신호 하나만으로 접속을 말려야 하는 경우(다운로드·사칭·차단)는 단독으로 위험(50), 목적지를 숨기는 신호는 단독으로 주의(20).
-- 해외 IP는 behavior-v1과 같이 0점(정보만 표시)입니다.
-- 이 배점값은 `SIGNAL_POINTS` 한 곳에서 바꿉니다.
-
-## behavior-v1 점수
-
-AI는 네 가지 공격 유형을 none/weak/moderate/strong/unknown으로 분류합니다.
-
-- credential_theft: 인증정보 탈취
-- personal_data_theft: 개인정보 탈취
-- financial_fraud: 금전 피해 유도
-- unsafe_installation: 위험한 설치 유도
-
-서버가 위험 수준을 0/10/30/60점으로 변환합니다. unknown은 0이 아니라 null입니다.
-AI 점수는 유형별 최고값 하나만 사용합니다. 중복되는 공격 유형을 합산하지 않습니다.
-AI가 직접 숫자 점수를 정하거나 입력된 지시문으로 점수를 변경할 수 없습니다.
-모든 긍정 판단은 실제 수집한 근거 ID를 참조해야 합니다.
-moderate/strong은 입력란·설치 링크만으로 인정하지 않고 본문의 요구 행동 근거가 필요합니다.
-strong은 긴급성/위협/보상/복구 문구 요구/보안 해제 같은 추가 문맥을 요구합니다.
-일반 로그인/외부 SSO/결제/정상 다운로드/피싱 설명문을 공격으로 단정하지 않도록 지시합니다.
-현재 근거 검증용 어휘는 한국어·영어 중심입니다. 오탐/미탐 가능성이 있어 평가 데이터로 보정해야 합니다.
-
-최종 점수 = AI 행동 분석(최대 60) + TLS(최대 25) + 도메인 생성일(최대 15).
-
-- 인증서 검증 실패: 25
-- HTTP: 10 (TLS 항목 내 중복 합산 없음)
-- 도메인 생성 30일 미만: 15
-- 30~179일: 5
-- 해외 IP: 0, 국가 정보만 반환
-- IP 주소형/단축 URL/실행 파일 확장자/브랜드 불일치: 이 버전의 점수에서 제외(2번 범위)
-  최종 이동 호스트가 바뀌면 원본과 최종 TLS·생성일 중 더 높은 값을 한 번만 사용합니다.
-
-주요 응답:
-
-```json
-{
-  "score": 75,
-  "score_version": "behavior-v1",
-  "score_scope": "ai_behavior_tls_domain_age",
-  "assessment_status": "complete",
-  "components": { "ai_behavior": 60, "tls": 0, "domain_age": 15 },
-  "attack_types": [
-    {
-      "type": "credential_theft",
-      "severity": "strong",
-      "evidence_ids": ["page_text_1"]
-    },
-    { "type": "personal_data_theft", "severity": "none", "evidence_ids": [] },
-    { "type": "financial_fraud", "severity": "none", "evidence_ids": [] },
-    { "type": "unsafe_installation", "severity": "none", "evidence_ids": [] }
-  ]
-}
-```
-
-이 예시는 전체 응답의 일부입니다. evidence/reasons/level/auto_open과 url_analysis/final_url_analysis도 함께 반환합니다.
-score_scope=ai_behavior_tls_domain_age: 점수와 level/assessment_status는 기존 AI 행동·TLS·도메인 생성일 범위만 나타냅니다.
-URL·브랜드·매장 신호는 반환하지만 이 점수에는 가산/감산하지 않습니다. URL의 종합 안전 점수로 해석하지 마세요.
-0점/낮음이더라도 url_analysis와 final_url_analysis의 위험 신호 및 조회 상태를 함께 확인해야 합니다.
-URL 신호를 점수에 포함하는 배점·중복 처리 규칙은 별도 점수 버전(아래 combined-v1)에서 적용합니다.
-page.evidence에는 근거 ID·종류·정제된 텍스트가 있습니다. HTML로 렌더링하지 말고 텍스트로 취급하세요.
-reasons에는 합계에 기여한 항목과 points/evidence_ids가 반환됩니다.
-ai_status는 행동 분류 처리 상태입니다. ai_explanation은 호환성을 위한 서버 요약이며 별도 AI 호출이 아닙니다.
-explanation은 결과 화면용 설명입니다. explanation_status가 generated/cached이면 AI가 쓴 문장이고, 그 외(disabled/unavailable/skipped)에는 ai_explanation과 같은 규칙 기반 문장입니다.
-navigation_allowed=false(내부망 차단·HTTPS→HTTP 이동 등)이면 설명 AI를 호출하지 않습니다(explanation_status=skipped).
-이때 explanation_skip_reason에 AI 설명을 만들지 않은 이유(차단 사유)를 사용자용 문장으로 반환하며, 결과 화면의 AI 설명 칸에 표시합니다.
-AI 키 미설정·시간 초과·잘못된 응답(explanation_status=unavailable)에도 explanation_skip_reason에 안내 문장을 반환합니다.
-include_explanation=false(disabled)이면 null입니다.
-
-AI 설명 출력 필터(`app/ai.py`의 `explanation_problems`): AI 문장이 아래 규칙을 어기면 화면에 보내지 않고 캐시하지 않으며,
-explanation_status=unavailable과 안내 문장으로 대신합니다.
-- INTERNAL_WORDING: 사용자·자동 접속·시스템·서버 같은 내부 표현
-- GRADE_OR_SCORE: 등급·확인 불가·점수·"N점"
-- TECH_TERM: DNS·TLS·RDAP·GeoIP 같은 기술 용어, SHORT_URL·brand_domain_status 같은 코드 이름
-- FORMAL_ENDING: "~습니다/~니다" 합쇼체
-- LINK_OR_MARKDOWN: 링크·마크다운·목록 기호
-- RECHECK_CONFIRMED: 공식 도메인이 일치했는데 "공식 사이트인지 확인"·"공식 앱이나 직접 검색"을 권하는 문장
-
-프롬프트를 바꾼 뒤에는 정해진 사례로 설명 문장을 확인하세요. 사례는 `tests/fixtures/explanation_cases.json`입니다.
-```powershell
-.\.venv\Scripts\python.exe -B -m scripts.check_explanations            # 사례 목록만 (요청 없음)
-.\.venv\Scripts\python.exe -B -m scripts.check_explanations --live --repeat 2
-.\.venv\Scripts\python.exe -B -m scripts.check_explanations --live --case naver_brand --repeat 3
-```
---live는 실제 사이트 조회와 유료 AI 호출(사례마다 페이지 분석 1회 + 설명 repeat회)을 합니다. 필터 적용 전 원문과 어긴 규칙,
-종합 판정이 기대 등급과 같은지를 보여줍니다. 판정은 외부 조회 결과에 따라 실행마다 달라질 수 있습니다.
-
-TLS 검증은 OS 인증서 저장소 대신 certifi(Mozilla) CA 묶음을 사용합니다. Windows에서 루트 인증서가 아직 내려받아지지 않아
-정상 사이트(example.com, bit.ly 등)가 INVALID_TLS(+25)로 잘못 채점되던 문제를 막기 위함입니다.
-
-- complete: behavior-v1 메타데이터와 네 가지 행동 유형의 정적 검사 완료
-- partial: 산출한 항목의 점수만 반환. AI 미사용/실패/unknown, 조회 누락, meta refresh 등이 해당
-- failed: 산출 가능한 항목이 없어 score=null. 내부 DNS 차단도 이 상태로 반환 가능
-- null인 구성 점수는 미평가이며 0점과 다릅니다.
-- 50 이상 위험, 20~49 주의. 20 미만은 complete일 때만 낮음, 이외에는 확인 불가.
-- evidence_complete는 메타데이터 조회 완료 여부, analysis_complete는 behavior-v1 검사 완료 여부. URL 검사의 status와는 별개입니다.
-  검사 완료는 정적 검사 범위의 완료를 뜻하며 실제 안전이나 악성 확률을 보증하지 않습니다.
-  score/assessment_status/components는 기존 버전과 계약이 달라졌으므로 프론트도 함께 맞추세요.
 
 ## 페이지 수집 보호
 
@@ -431,34 +328,138 @@ URL 검사 예제:
 2번의 URL 신호는 behavior-v1 점수와 별도이므로 실행 파일 링크가 잡혀도 점수가 반드시 올라가지는 않습니다.
 AI의 내용 구별은 위 정답 예제 평가로, 실제 수집과 API 연결은 Swagger로 나누어 확인하세요.
 
-## 사진에서 상표명 OCR
+## behavior-v1 점수
 
-`POST /api/ocr/brands/local`에 JPEG/PNG 사진을 multipart 파일 필드 `image`로 보내면,
-한국어·영어 글자와 등록된 브랜드 후보를 반환합니다. 후보를 확인한 뒤 기존 `/api/analyze`에 brand_texts로 전달하세요.
+AI는 네 가지 공격 유형을 none/weak/moderate/strong/unknown으로 분류합니다.
 
-- EasyOCR CPU 실행, 별도 OCR API 키·BAZE 호출 없음.
-- 최대 5MiB·1,600만 화소, 방향 보정 및 긴 변 1,600픽셀 축소.
-- 낮은 신뢰도·여러 브랜드·미등록 브랜드를 구분하며, 인식 결과는 자동 확정하지 않음.
-- OCR 모델은 한 번 준비하고 재사용. 일반 요청에서는 모델 다운로드를 하지 않음.
-- 기본 requirements에 더해 requirements-ocr.txt 설치와 모델 준비가 필요함.
+- credential_theft: 인증정보 탈취
+- personal_data_theft: 개인정보 탈취
+- financial_fraud: 금전 피해 유도
+- unsafe_installation: 위험한 설치 유도
 
-```powershell
-.\.venv\Scripts\python.exe -m pip install torch torchvision --index-url https://download.pytorch.org/whl/cpu
-.\.venv\Scripts\python.exe -m pip install -r requirements-ocr.txt
-.\.venv\Scripts\python.exe -B -m scripts.setup_ocr --download-models
+서버가 위험 수준을 0/10/30/60점으로 변환합니다. unknown은 0이 아니라 null입니다.
+AI 점수는 유형별 최고값 하나만 사용합니다. 중복되는 공격 유형을 합산하지 않습니다.
+AI가 직접 숫자 점수를 정하거나 입력된 지시문으로 점수를 변경할 수 없습니다.
+모든 긍정 판단은 실제 수집한 근거 ID를 참조해야 합니다.
+moderate/strong은 입력란·설치 링크만으로 인정하지 않고 본문의 요구 행동 근거가 필요합니다.
+strong은 긴급성/위협/보상/복구 문구 요구/보안 해제 같은 추가 문맥을 요구합니다.
+일반 로그인/외부 SSO/결제/정상 다운로드/피싱 설명문을 공격으로 단정하지 않도록 지시합니다.
+현재 근거 검증용 어휘는 한국어·영어 중심입니다. 오탐/미탐 가능성이 있어 평가 데이터로 보정해야 합니다.
+
+최종 점수 = AI 행동 분석(최대 60) + TLS(최대 25) + 도메인 생성일(최대 15).
+
+- 인증서 검증 실패: 25
+- HTTP: 10 (TLS 항목 내 중복 합산 없음)
+- 도메인 생성 30일 미만: 15
+- 30~179일: 5
+- 해외 IP: 0, 국가 정보만 반환
+- IP 주소형/단축 URL/실행 파일 확장자/브랜드 불일치: 이 버전의 점수에서 제외(2번 범위)
+  최종 이동 호스트가 바뀌면 원본과 최종 TLS·생성일 중 더 높은 값을 한 번만 사용합니다.
+
+주요 응답:
+
+```json
+{
+  "score": 75,
+  "score_version": "behavior-v1",
+  "score_scope": "ai_behavior_tls_domain_age",
+  "assessment_status": "complete",
+  "components": { "ai_behavior": 60, "tls": 0, "domain_age": 15 },
+  "attack_types": [
+    {
+      "type": "credential_theft",
+      "severity": "strong",
+      "evidence_ids": ["page_text_1"]
+    },
+    { "type": "personal_data_theft", "severity": "none", "evidence_ids": [] },
+    { "type": "financial_fraud", "severity": "none", "evidence_ids": [] },
+    { "type": "unsafe_installation", "severity": "none", "evidence_ids": [] }
+  ]
+}
 ```
 
-서버를 켠 뒤 `/docs`에서 파일 업로드로 테스트하거나 다음 명령으로 사진을 직접 검사할 수 있습니다.
+이 예시는 전체 응답의 일부입니다. evidence/reasons/level/auto_open과 url_analysis/final_url_analysis도 함께 반환합니다.
+score_scope=ai_behavior_tls_domain_age: 점수와 level/assessment_status는 기존 AI 행동·TLS·도메인 생성일 범위만 나타냅니다.
+URL·브랜드·매장 신호는 반환하지만 이 점수에는 가산/감산하지 않습니다. URL의 종합 안전 점수로 해석하지 마세요.
+0점/낮음이더라도 url_analysis와 final_url_analysis의 위험 신호 및 조회 상태를 함께 확인해야 합니다.
+URL 신호를 점수에 포함하는 배점·중복 처리 규칙은 별도 점수 버전(아래 combined-v1)에서 적용합니다.
+page.evidence에는 근거 ID·종류·정제된 텍스트가 있습니다. HTML로 렌더링하지 말고 텍스트로 취급하세요.
+reasons에는 합계에 기여한 항목과 points/evidence_ids가 반환됩니다.
+ai_status는 행동 분류 처리 상태입니다. ai_explanation은 호환성을 위한 서버 요약이며 별도 AI 호출이 아닙니다.
+explanation은 결과 화면용 설명입니다. explanation_status가 generated/cached이면 AI가 쓴 문장이고, 그 외(disabled/unavailable/skipped)에는 ai_explanation과 같은 규칙 기반 문장입니다.
+navigation_allowed=false(내부망 차단·HTTPS→HTTP 이동 등)이면 설명 AI를 호출하지 않습니다(explanation_status=skipped).
+이때 explanation_skip_reason에 AI 설명을 만들지 않은 이유(차단 사유)를 사용자용 문장으로 반환하며, 결과 화면의 AI 설명 칸에 표시합니다.
+AI 키 미설정·시간 초과·잘못된 응답(explanation_status=unavailable)에도 explanation_skip_reason에 안내 문장을 반환합니다.
+include_explanation=false(disabled)이면 null입니다.
 
+AI 설명 출력 필터(`app/ai.py`의 `explanation_problems`): AI 문장이 아래 규칙을 어기면 화면에 보내지 않고 캐시하지 않으며,
+explanation_status=unavailable과 안내 문장으로 대신합니다.
+- INTERNAL_WORDING: 사용자·자동 접속·시스템·서버 같은 내부 표현
+- GRADE_OR_SCORE: 등급·확인 불가·점수·"N점"
+- TECH_TERM: DNS·TLS·RDAP·GeoIP 같은 기술 용어, SHORT_URL·brand_domain_status 같은 코드 이름
+- FORMAL_ENDING: "~습니다/~니다" 합쇼체
+- LINK_OR_MARKDOWN: 링크·마크다운·목록 기호
+- RECHECK_CONFIRMED: 공식 도메인이 일치했는데 "공식 사이트인지 확인"·"공식 앱이나 직접 검색"을 권하는 문장
+
+프롬프트를 바꾼 뒤에는 정해진 사례로 설명 문장을 확인하세요. 사례는 `tests/fixtures/explanation_cases.json`입니다.
 ```powershell
-.\.venv\Scripts\python.exe -B -m scripts.check_ocr "C:/Users/User/Desktop/brand.jpg"
+.\.venv\Scripts\python.exe -B -m scripts.check_explanations            # 사례 목록만 (요청 없음)
+.\.venv\Scripts\python.exe -B -m scripts.check_explanations --live --repeat 2
+.\.venv\Scripts\python.exe -B -m scripts.check_explanations --live --case naver_brand --repeat 3
 ```
+--live는 실제 사이트 조회와 유료 AI 호출(사례마다 페이지 분석 1회 + 설명 repeat회)을 합니다. 필터 적용 전 원문과 어긴 규칙,
+종합 판정이 기대 등급과 같은지를 보여줍니다. 판정은 외부 조회 결과에 따라 실행마다 달라질 수 있습니다.
 
-[OCR 요청·응답과 프론트 연결 방법](app/docs/ocr_api.md)에 설치, 상태 코드, 브랜드 별칭 추가 방법을 정리했습니다.
+TLS 검증은 OS 인증서 저장소 대신 certifi(Mozilla) CA 묶음을 사용합니다. Windows에서 루트 인증서가 아직 내려받아지지 않아
+정상 사이트(example.com, bit.ly 등)가 INVALID_TLS(+25)로 잘못 채점되던 문제를 막기 위함입니다.
 
-## 단축 링크 해제 후 2번 검사
+- complete: behavior-v1 메타데이터와 네 가지 행동 유형의 정적 검사 완료
+- partial: 산출한 항목의 점수만 반환. AI 미사용/실패/unknown, 조회 누락, meta refresh 등이 해당
+- failed: 산출 가능한 항목이 없어 score=null. 내부 DNS 차단도 이 상태로 반환 가능
+- null인 구성 점수는 미평가이며 0점과 다릅니다.
+- 50 이상 위험, 20~49 주의. 20 미만은 complete일 때만 낮음, 이외에는 확인 불가.
+- evidence_complete는 메타데이터 조회 완료 여부, analysis_complete는 behavior-v1 검사 완료 여부. URL 검사의 status와는 별개입니다.
+  검사 완료는 정적 검사 범위의 완료를 뜻하며 실제 안전이나 악성 확률을 보증하지 않습니다.
+  score/assessment_status/components는 기존 버전과 계약이 달라졌으므로 프론트도 함께 맞추세요.
 
-POST /api/url/analyze에 `resolve_redirects: true`를 추가하면, 서버가 HTTP 이동을 확인한 뒤
-최종 주소의 URL 패턴·브랜드·매장 검사 결과를 `final_url_analysis`로 함께 반환합니다.
-기본값 false에서는 기존의 로컬 검사 동작을 유지합니다. AI 호출은 사용하지 않습니다.
-요청 예시와 상태·제한은 [단축 링크 연결 명세](app/docs/url_resolution.md)를 참고하세요.
+## combined-v1 종합 판정 (`verdict`)
+
+결과 화면 배너와 AI 결과 설명은 응답의 `verdict`를 따릅니다. 기존 `score`/`level`(behavior-v1)은 바꾸지 않고 그대로 반환합니다.
+구현: `app/verdict.py`, 테스트: `tests/test_verdict.py`. 공식 도메인·사칭 근거는 현재 `app/domain_ai.py`의 AI 검색 판정을 사용합니다.
+
+종합 점수 = behavior-v1 구성 점수(AI 행동 ≤60 + TLS ≤25 + 도메인 생성일 ≤15) + 아래 URL 신호 점수, 최대 100.
+
+| 코드                       | 점수 | 조건                                                                                  |
+| -------------------------- | ---- | ------------------------------------------------------------------------------------- |
+| BLOCKED_NAVIGATION         | 50   | navigation_allowed=false (내부망 주소, HTTPS→HTTP 이동 등). 점수와 상관없이 항상 위험 |
+| EXECUTABLE_DOWNLOAD        | 50   | EXECUTABLE_LINK/EXECUTABLE_QUERY 또는 page.download_response                          |
+| BRAND_DOMAIN_MISMATCH      | 50   | AI 검색 근거가 있는 사칭 의심(brand_domain_status=mismatched)                                                        |
+| STORE_DOMAIN_IMPERSONATION | 50   | domain_impersonation_status=impersonation_suspected                                   |
+| STORE_QR_MISMATCH          | 25   | store_qr_status=mismatched (위장 도메인으로 이미 잡히면 중복 가산 안 함)              |
+| PRINTED_DOMAIN_MISMATCH    | 25   | printed_domain_check.status=mismatched (QR 주변 인쇄 주소와 QR 주소가 다름)          |
+| SHORT_URL                  | 20   | 단축 URL                                                                              |
+| IP_LITERAL                 | 20   | IP 주소형 URL                                                                         |
+| REDIRECT_PARAMETER         | 20   | redirect_pattern_detected=true                                                        |
+| BRAND_IN_DOMAIN            | 50   | 공식 도메인 DB의 상표 단어(naver, starbucks 등)가 공식이 아닌 도메인에 포함 (입력 상표·매장 사칭으로 이미 잡히면 중복 가산 안 함) |
+| PHISHING_KEYWORD_DOMAIN    | 20   | 등록 도메인 이름에 login·verify·secure·refund·delivery 등 낚시성 단어                 |
+
+`domain_keyword_check`(`app/services/domain_keywords.py`, 테스트 `tests/test_domain_keywords.py`)
+- `brand_in_domain`: 상표 단어는 공식 도메인 DB에서 가져옵니다(`naver.com` → `naver`, 4글자 이상, 데모 항목 제외). 그 상표의 공식 도메인과 하위 도메인은 제외합니다.
+- 오타·비슷한 글자로 흉내 낸 도메인(`nav3r.com`, `starbuks.co.kr`, `edlya.com`)도 `brand_in_domain`(`match: lookalike`)으로 잡습니다.
+  3↔e, 0↔o, 1·i↔l, rn↔m 등 헷갈리는 글자를 같게 본 뒤, 8글자 이상 상표는 2글자까지, 짧은 상표는 글자 순서 바뀜·1글자 추가/누락만 허용합니다
+  (짧은 상표에서 다른 글자로 바꾼 경우는 never·saver 같은 일반 단어와 겹쳐 제외). 5글자 미만 상표는 비교하지 않습니다.
+- `domain_keywords`: 등록 도메인 이름(`secure-login-verify.com`)에 있을 때만 점수에 반영합니다.
+- `path_keywords`: 하위 도메인·경로·쿼리(`login.example.org/account`)의 단어는 정상 사이트에도 흔해 참고로만 반환합니다.
+- 설명 AI에는 해당 여부만 보내고 단어·도메인 자체는 보내지 않습니다.
+
+- HTTP QR 분석에서 상표 사칭은 AI 검색 출처로 판단합니다. 위의 로컬 도메인 단어·오타 함수 설명은 레거시 오프라인 검사에 해당하며, 현재 HTTP 경로는 고정 상표 DB를 읽지 않습니다.
+- 입력 주소와 최종 이동 주소의 신호는 합쳐서 신호마다 한 번만 더합니다.
+- 50 이상 위험, 20~49 주의, 20 미만은 `verdict.assessment_status=complete`일 때만 낮음, 그 외 확인 불가.
+- `verdict.assessment_status`는 behavior-v1 검사 완료 여부와 입력·최종 URL 검사 성공 여부를 함께 반영합니다. 요청한 상표 비교의 결과가 unknown이거나 DB 조회가 실패하면 미완료입니다. 상표를 입력하지 않아 비교하지 않은 경우는 선택 검사 생략입니다.
+- unknown·조회 실패는 악성 근거가 아니므로 임의의 벌점을 추가하지 않습니다. 0점도 미완료라면 안전 판정이 아닙니다. 모든 점수 항목이 미측정이면 score=null입니다.
+- AI 네 유형이 각각 한 번씩 평가되어야 완료입니다. 빈 배열·중복·누락·unknown 또는 읽지 못한 페이지는 정상 판정으로 처리하지 않습니다.
+- `m.site.naver.com`(네이버 QR 중계)과 `naver.me`도 SHORT_URL 20점에 포함합니다. 정상 서비스라도 목적지를 숨기는 구조에 대한 주의이며 악성 확률 20%라는 뜻은 아닙니다.
+- 프론트는 검사 실패를 ‘확인 불가’, 선택 검사 생략을 ‘미검사’, 조사 범위에서 신호가 없으면 ‘신호 미발견’, 인증서·생성일 등 조회 성공은 ‘확인됨’으로 구분합니다. 미완료 점수에는 ‘확인된 위험 점수’와 누락 항목을 표시합니다.
+- 배점 기준: 그 신호 하나만으로 접속을 말려야 하는 경우(다운로드·사칭·차단)는 단독으로 위험(50), 목적지를 숨기는 신호는 단독으로 주의(20).
+- 해외 IP는 behavior-v1과 같이 0점(정보만 표시)입니다.
+- 이 배점값은 `SIGNAL_POINTS` 한 곳에서 바꿉니다.
