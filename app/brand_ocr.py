@@ -17,6 +17,7 @@ import httpx
 
 from app.config import baze_settings
 from app.services.brand_alias import expand_brand_texts
+from app.services.brand_extraction import BrandRegistryUnavailable, load_aliases, normalize_text
 from app.services.printed_domain import MAX_PRINTED, registered_domain
 
 MAX_IMAGE_BYTES = 3 * 1024 * 1024
@@ -169,7 +170,15 @@ async def read_brands(image_base64):
 
     registered = registered_brand_keys()
     # "네이버 웹툰" -> also offer "네이버" so the official-domain check can compare it.
-    names = expand_brand_texts(names, limit=MAX_BRANDS * 2)
+    # OCR may return English labels (e.g. STARBUCKS COFFEE). Offer the exact registered
+    # canonical alias as well; keep the model text for user confirmation. No fuzzy guessing.
+    try:
+        aliases = {normalize_text(alias).replace(" ", ""): brand
+                   for brand, values in load_aliases().items() for alias in values}
+    except BrandRegistryUnavailable:
+        aliases = {}
+    canonical = [aliases.get(normalize_text(name).replace(" ", "")) for name in names]
+    names = expand_brand_texts(names + [name for name in canonical if name], limit=MAX_BRANDS * 2)
     brands = [{"name": name, "registered": name.casefold() in registered} for name in names]
     # Names with an official domain on file first: those are the ones the brand check can compare.
     brands.sort(key=lambda b: not b["registered"])
