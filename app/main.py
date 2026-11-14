@@ -70,7 +70,8 @@ async def analyze(request: AnalyzeRequest):
         ai_status = page["ai_status"]
         ai_model = page["ai_model"]
         final_url = page.get("final_url")
-        if page["status"] == "ok" and final_url and final_url != url:
+        # A known final file/non-HTML URL still needs task-2 pattern and brand checks.
+        if page["status"] != "blocked" and final_url and final_url != url:
             final_local = await asyncio.to_thread(
                 analyze_url_signals, final_url, brand_texts, request.store_id)
     else:
