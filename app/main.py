@@ -19,6 +19,7 @@ from app.services.printed_domain import compare_printed_domains
 from app.services.url_analysis import analyze_url_signals
 from app.verdict import combined_verdict
 from app.routers.ocr import router as ocr_router
+from app.routers.qr import router as qr_router
 from app.middleware.ocr_upload import OCRUploadLimitMiddleware
 
 app = FastAPI(title="QR Alert API", version="0.7.0")
@@ -136,3 +137,4 @@ async def ocr_brands(request: BrandOCRRequest):
 
 app.include_router(url_analysis_router)
 app.include_router(ocr_router)
+app.include_router(qr_router)
