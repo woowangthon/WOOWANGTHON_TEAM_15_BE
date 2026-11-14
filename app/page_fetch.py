@@ -43,7 +43,7 @@ async def request_html(url, hostname, port, addresses, *, headers_only=False):
     async with aiohttp.ClientSession(
         connector=connector, cookie_jar=aiohttp.DummyCookieJar(), trust_env=False,
         auto_decompress=False, timeout=aiohttp.ClientTimeout(total=8, sock_connect=4, sock_read=4),
-        headers={"User-Agent": "QRAlert-SecurityPreview/1.0", "Accept": "text/html,application/xhtml+xml",
+        headers={"User-Agent": "QURE-SecurityPreview/1.0", "Accept": "text/html,application/xhtml+xml",
                  "Accept-Encoding": "identity"},
         max_line_size=8190, max_field_size=8190,
     ) as client:

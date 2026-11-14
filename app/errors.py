@@ -3,6 +3,8 @@
 `detail` stays a string (the app shows it as is); `code` is for programs; request-validation errors
 also list each bad field in `errors`. Before this, FastAPI's validation errors returned `detail` as a list.
 """
+from http import HTTPStatus
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
@@ -50,10 +52,20 @@ def _field(loc):
     return ".".join(parts) or "body"
 
 
+def _status_phrase(status):
+    try:
+        return HTTPStatus(status).phrase
+    except ValueError:
+        return None
+
+
 def install_error_handlers(app: FastAPI):
     @app.exception_handler(StarletteHTTPException)
     async def http_error(_: Request, exc: StarletteHTTPException):
-        detail = exc.detail if isinstance(exc.detail, str) else DEFAULT_MESSAGES.get(exc.status_code, "요청을 처리하지 못했습니다.")
+        detail = exc.detail
+        # Starlette's own 404/405 carry the English status phrase ("Not Found"); show Korean instead.
+        if not isinstance(detail, str) or (detail == _status_phrase(exc.status_code) and exc.status_code in DEFAULT_MESSAGES):
+            detail = DEFAULT_MESSAGES.get(exc.status_code, "요청을 처리하지 못했습니다.")
         return JSONResponse(error_body(exc.status_code, detail, getattr(exc, "code", None)),
                             status_code=exc.status_code, headers=getattr(exc, "headers", None))
 

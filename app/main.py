@@ -22,7 +22,7 @@ from app.routers.ocr import router as ocr_router
 from app.middleware.ocr_upload import OCRUploadLimitMiddleware
 from app.errors import ApiError, install_error_handlers
 
-app = FastAPI(title="QR Alert API", version="0.7.0")
+app = FastAPI(title="QURE API", version="0.7.0")
 install_error_handlers(app)
 app.add_middleware(OCRUploadLimitMiddleware)
 origins = [s.strip() for s in os.getenv("CORS_ORIGINS", "").split(",") if s.strip()]

@@ -1,4 +1,4 @@
-# QR Alert FastAPI backend
+# QURE FastAPI backend
 
 이 저장소는 QR의 HTTP(S) URL을 받아 서버에서 도메인·TLS·IP 국가 정보를 조회하고,
 선택적으로 정적 HTML과 AI를 이용해 요구 행동의 위험도를 평가합니다.
@@ -322,19 +322,19 @@ CORS_ORIGINS는 Expo Web의 실제 origin을 지정하는 설정입니다.
 관리자 PowerShell에서 개발용 규칙 생성:
 
 ```powershell
-New-NetFirewallRule -DisplayName "QRAlert FastAPI 8000" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -Profile Private -RemoteAddress LocalSubnet
+New-NetFirewallRule -DisplayName "QURE FastAPI 8000" -Direction Inbound -Action Allow -Protocol TCP -LocalPort 8000 -Profile Private -RemoteAddress LocalSubnet
 ```
 
 이미 있는 규칙 수정:
 
 ```powershell
-Set-NetFirewallRule -DisplayName "QRAlert FastAPI 8000" -Profile Private -RemoteAddress LocalSubnet
+Set-NetFirewallRule -DisplayName "QURE FastAPI 8000" -Profile Private -RemoteAddress LocalSubnet
 ```
 
 종료 시 서버 Ctrl+C, 개발용 규칙 제거:
 
 ```powershell
-Remove-NetFirewallRule -DisplayName "QRAlert FastAPI 8000"
+Remove-NetFirewallRule -DisplayName "QURE FastAPI 8000"
 ```
 
 LocalSubnet은 로컬 서브넷 범위이며 휴대폰 한 대만 뜻하지 않습니다. 실제 배포에는 HTTPS 서버를 사용하세요.

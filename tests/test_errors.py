@@ -26,11 +26,10 @@ class ErrorFormatTests(unittest.TestCase):
         self.assertIn("qr_text", [e["field"] for e in body["errors"]])
 
     def test_unknown_path_and_method(self):
-        self.assertEqual(self.client.get("/api/nope").json()["code"], "NOT_FOUND")
+        self.assertEqual(self.client.get("/api/nope").json(), {"detail": "없는 경로입니다.", "code": "NOT_FOUND"})
         wrong = self.client.get("/api/analyze")
         self.assertEqual(wrong.status_code, 405)
-        self.assertEqual(wrong.json()["code"], "METHOD_NOT_ALLOWED")
-        self.assertIsInstance(wrong.json()["detail"], str)
+        self.assertEqual(wrong.json(), {"detail": "지원하지 않는 메서드입니다.", "code": "METHOD_NOT_ALLOWED"})
 
     def test_ocr_upload_limit_uses_same_shape(self):
         response = self.client.post("/api/ocr/brands/local", headers={"content-length": "99999999999"}, content=b"")
