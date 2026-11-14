@@ -81,6 +81,15 @@ class TestURLAnalysis(unittest.TestCase):
         )
         self.assertEqual(result["status"], "unknown")
 
+    # 10-1. 네이버: 한글/영문 상표명, 하위 도메인 일치와 사칭 도메인 불일치
+    def test_naver_brand(self):
+        for brand in ["네이버", "Naver", "NAVER"]:
+            with self.subTest(brand=brand):
+                self.assertEqual(compare_brand_domain("https://m.naver.com", [brand])["status"], "matched")
+        self.assertEqual(compare_brand_domain("https://www.naver.com", ["네이버"])["status"], "matched")
+        self.assertEqual(compare_brand_domain("https://naver.com.login-check.example", ["네이버"])["status"], "mismatched")
+        self.assertEqual(compare_brand_domain("https://navercorp-login.example", ["naver"])["status"], "mismatched")
+
     # 11. 쿼리에 APK 파일명이 있는 경우
     def test_query_apk(self):
         result = check_suspicious_patterns(

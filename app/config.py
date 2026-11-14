@@ -1,7 +1,9 @@
 """Load backend-local configuration without overriding deployment environment variables."""
 import os
+import ssl
 from pathlib import Path
 
+import certifi
 from dotenv import load_dotenv
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -19,9 +21,26 @@ def baze_settings():
     }
 
 
+def tls_context():
+    # Use Mozilla's CA bundle instead of the OS store. On Windows, Python only sees roots that
+    # Windows has already downloaded, so valid sites (e.g. example.com, bit.ly) failed verification
+    # and were scored as INVALID_TLS (+25) on some machines.
+    return ssl.create_default_context(cafile=certifi.where())
+
+
 def geoip_database_path():
     value = os.getenv("GEOIP_DB_PATH", "").strip()
     if not value:
         return None
     path = Path(value).expanduser()
     return (path if path.is_absolute() else PROJECT_ROOT / path).resolve()
+
+
+def ocr_settings():
+    value = os.getenv("OCR_MODEL_DIR", "./data/ocr_models").strip() or "./data/ocr_models"
+    path = Path(value).expanduser()
+    confidence = float(os.getenv("OCR_MIN_CONFIDENCE", "0.65"))
+    if not 0 <= confidence <= 1:
+        raise ValueError("OCR_MIN_CONFIDENCE must be between 0 and 1")
+    return {"model_dir": (path if path.is_absolute() else PROJECT_ROOT / path).resolve(),
+            "min_confidence": confidence}

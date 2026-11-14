@@ -40,6 +40,13 @@ def unknown_attacks():
     return [{"type": kind, "severity": "unknown", "evidence_ids": []} for kind in ATTACK_TYPES]
 
 
+def assessment_complete(attacks):
+    """Every category must be assessed once; an empty list is not a clean assessment."""
+    return (len(attacks) == len(ATTACK_TYPES)
+            and {a["type"] for a in attacks} == set(ATTACK_TYPES)
+            and all(a["severity"] in SEVERITY_POINTS and a["severity"] != "unknown" for a in attacks))
+
+
 def validate_assessment(raw, evidence):
     assessment = BehaviorResponse.model_validate_json(raw)
     if {attack.type for attack in assessment.attacks} != set(ATTACK_TYPES):

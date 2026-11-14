@@ -38,3 +38,26 @@ class URLAnalysisResponse(BaseModel):
     redirect_patterns: dict[str, Any]
     risk_signals: RiskSignals
     errors: list[str] = Field(default_factory=list)
+
+
+class URLRedirectHop(BaseModel):
+    url: str
+    http_status: int
+
+
+class URLResolutionReport(BaseModel):
+    # ok means the HTTP redirect chain ended, never that the site is safe.
+    status: Literal["ok", "unknown", "blocked", "not_applicable"]
+    reason: str | None = None
+    final_url: str | None = None
+    redirect_chain: list[URLRedirectHop] = Field(default_factory=list, max_length=4)
+    download_response: bool = False
+    body_inspected: Literal[False] = False
+    auto_open: Literal[False] = False
+    requires_confirmation: Literal[True] = True
+    scope: Literal["http_redirects_only"] = "http_redirects_only"
+
+
+class ExpandedURLAnalysisResponse(URLAnalysisResponse):
+    url_resolution: URLResolutionReport | None = None
+    final_url_analysis: URLAnalysisResponse | None = None
