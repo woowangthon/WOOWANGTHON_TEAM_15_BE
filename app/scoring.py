@@ -87,3 +87,14 @@ def combine_page(result, page, target=None):
                       behavior_complete=behavior_complete,
                       navigation_allowed=result["navigation_allowed"] and not blocked)
     return {**result, **scored, "page": page}
+
+
+def metadata_only_result(result):
+    """Current public API policy: page AI is reference-only, never a scored input."""
+    components = {"ai_behavior": None, "tls": result["components"].get("tls"),
+                  "domain_age": result["components"].get("domain_age")}
+    reasons = [dict(r) for r in result.get("reasons", []) if not r["code"].startswith("AI_")]
+    scored = finalize(components, reasons, result.get("attack_types", unknown_attacks()),
+                      evidence_complete=result.get("evidence_complete", False),
+                      behavior_complete=True, navigation_allowed=result["navigation_allowed"])
+    return {**result, **scored, "score_version": "metadata-v2", "score_scope": "tls_domain_age"}

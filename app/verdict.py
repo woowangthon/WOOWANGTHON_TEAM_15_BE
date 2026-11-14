@@ -1,4 +1,7 @@
-"""combined-v1: one overall verdict for the result screen and the AI explanation.
+"""Public metadata-v2 inputs yield combined-v2: page AI is excluded from scoring/completeness.
+Legacy behavior-v1 inputs retain combined-v1 for historical callers/tests.
+
+combined-v1: one overall verdict for the result screen and the AI explanation.
 
 behavior-v1 (score/level/components) is left unchanged. This adds the URL/brand/store signals that
 behavior-v1 deliberately excludes, so the screen, the score and the explanation say the same thing.
@@ -74,6 +77,7 @@ def _url_checks_complete(analysis, brand_requested):
 
 def combined_verdict(result, *, brand_requested=False):
     """result: the /api/analyze response (behavior-v1 fields + url_analysis/final_url_analysis/page)."""
+    metadata_only = result.get("score_scope") == "tls_domain_age"
     codes = _signal_codes(result.get("url_analysis")) | _signal_codes(result.get("final_url_analysis"))
     page = result.get("page") or {}
     if page.get("download_response"):
@@ -103,9 +107,12 @@ def combined_verdict(result, *, brand_requested=False):
     signal_reasons = [{"code": code, "points": SIGNAL_POINTS[code][0], "message": SIGNAL_POINTS[code][1]}
                       for code in SIGNAL_POINTS if code in codes]
     base_reasons = [{"code": r["code"], "points": r["points"], "message": r["message"]}
-                    for r in result.get("reasons", []) if r.get("code") != "BLOCKED_TARGET"]
+                    for r in result.get("reasons", []) if r.get("code") != "BLOCKED_TARGET"
+                    and (not metadata_only or not r.get("code", "").startswith("AI_"))]
 
-    known = [v for v in (result.get("components") or {}).values() if v is not None]
+    components = result.get("components") or {}
+    keys = ("tls", "domain_age") if metadata_only else ("ai_behavior", "tls", "domain_age")
+    known = [components.get(k) for k in keys if components.get(k) is not None]
     signal_points = sum(r["points"] for r in signal_reasons)
     score = None if not known and not signal_reasons else min(100, sum(known) + signal_points)
 
@@ -116,6 +123,10 @@ def combined_verdict(result, *, brand_requested=False):
                         for k in ("ai_behavior", "tls", "domain_age"))
                 and assessment_complete(result.get("attack_types") or [])
                 and _url_checks_complete(result.get("url_analysis"), brand_requested))
+    if metadata_only:
+        complete = (result.get("evidence_complete", False)
+                    and all(components.get(k) is not None for k in keys)
+                    and _url_checks_complete(result.get("url_analysis"), brand_requested))
     final = result.get("final_url_analysis")
     if final is not None or (page.get("final_url") and page["final_url"] != result.get("url")):
         complete = complete and _url_checks_complete(final, brand_requested)
@@ -131,5 +142,5 @@ def combined_verdict(result, *, brand_requested=False):
         level = "확인 불가"
 
     reasons = sorted(signal_reasons + base_reasons, key=lambda r: -r["points"])
-    return {"version": VERDICT_VERSION, "score": score, "level": level,
+    return {"version": "combined-v2" if metadata_only else VERDICT_VERSION, "score": score, "level": level,
             "assessment_status": assessment_status, "reasons": reasons}

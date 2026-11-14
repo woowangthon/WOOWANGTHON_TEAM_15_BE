@@ -127,7 +127,7 @@ def summary_for_ai(result):
         summary.setdefault("url_signals", {})["printed_domain_status"] = printed
     attacks = [{"type": a["type"], "severity": a["severity"]} for a in result.get("attack_types") or []
                if a.get("severity") not in {"none", "unknown"}]
-    if attacks:
+    if attacks and result.get("score_scope") != "tls_domain_age":
         summary["page_attacks"] = attacks
     verdict = result.get("verdict")
     if verdict:

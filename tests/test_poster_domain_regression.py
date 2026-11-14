@@ -36,5 +36,5 @@ class PosterDomainTests(unittest.TestCase):
                     self.assertEqual(result["verdict"]["level"], "위험")
                 else:
                     # All scored metadata/domain checks complete; page AI is excluded.
-                    self.assertEqual(result["verdict"]["assessment_status"], "partial")
+                    self.assertEqual(result["verdict"]["assessment_status"], "complete")
                 self.assertFalse(result["auto_open"])

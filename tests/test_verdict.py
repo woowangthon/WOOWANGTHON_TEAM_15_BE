@@ -193,7 +193,7 @@ class VerdictAPITests(unittest.TestCase):
              patch("httpx.AsyncClient.post", AsyncMock()) as post, TestClient(app) as client:
             data = client.post("/api/analyze", json={"qr_text": url, "brand_texts": []}).json()
         self.assertEqual(data["score"], 0)
-        self.assertEqual(data["score_version"], "behavior-v1")
+        self.assertEqual(data["score_version"], "metadata-v2")
         self.assertEqual(data["verdict"]["level"], "위험")
         self.assertEqual(data["verdict"]["score"], 50)
         post.assert_not_called()

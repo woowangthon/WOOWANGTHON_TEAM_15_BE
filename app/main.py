@@ -18,6 +18,7 @@ from app.services.domain_keywords import check_domain_keywords
 from app.services.printed_domain import compare_printed_domains
 from app.services.url_analysis import analyze_url_signals
 from app.verdict import combined_verdict
+from app.scoring import metadata_only_result
 from app.routers.ocr import router as ocr_router
 from app.routers.qr import router as qr_router
 from app.middleware.ocr_upload import OCRUploadLimitMiddleware
@@ -78,6 +79,7 @@ async def analyze(request: AnalyzeRequest):
     else:
         ai_status = "skipped" if request.include_ai else "disabled"
         ai_model = None
+    result = metadata_only_result(result)
     urls = [url, final_local["url_info"]["url"] if final_local else None]
     reports = await verify_official_domains(
         urls, brand_texts, enabled=request.include_ai and result["navigation_allowed"])
@@ -93,8 +95,8 @@ async def analyze(request: AnalyzeRequest):
         **result,
         "url_analysis": local,
         "final_url_analysis": final_local,
-        "score_scope": "ai_behavior_tls_domain_age",
-        "warning": result["warning"] + " URL·브랜드·매장 검사 신호는 behavior-v1 점수에 포함되지 않습니다.",
+        "score_scope": "tls_domain_age",
+        "warning": result["warning"] + " 페이지 AI 분석은 점수와 종합 판정에서 제외됩니다.",
         "ai_status": ai_status,
         "ai_model": ai_model,
         "ai_explanation": fallback_text(result),

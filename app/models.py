@@ -108,8 +108,8 @@ class VerdictReason(BaseModel):
 
 
 class Verdict(BaseModel):
-    """combined-v1 combines behavior, URL and domain observations."""
-    version: Literal["combined-v1"]
+    """Public combined-v2 excludes page AI. combined-v1 denotes historical responses."""
+    version: Literal["combined-v1", "combined-v2"]
     assessment_status: Literal["complete", "partial", "failed"]
     score: int | None = Field(ge=0, le=100)
     level: Literal["낮음", "주의", "위험", "확인 불가"]
@@ -140,8 +140,8 @@ class AnalyzeResponse(BaseModel):
     hostname: str
     evidence: Evidence
     score: int | None = Field(ge=0, le=100)
-    score_version: Literal["behavior-v1"]
-    score_scope: Literal["ai_behavior_tls_domain_age"]
+    score_version: Literal["behavior-v1", "metadata-v2"]
+    score_scope: Literal["ai_behavior_tls_domain_age", "tls_domain_age"]
     url_analysis: URLAnalysisResponse
     final_url_analysis: URLAnalysisResponse | None = None
     assessment_status: Literal["complete", "partial", "failed"]
