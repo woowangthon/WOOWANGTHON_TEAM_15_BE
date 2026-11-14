@@ -89,10 +89,10 @@ def _lookalike(host, suffix, brand_words):
     return None
 
 
-def check_domain_keywords(urls):
+def check_domain_keywords(urls, *, brand_words=None, official_domains=()):
     """urls: the scanned URL and, if any, the final URL after redirects."""
-    brand_words = _brand_words()
-    official = {d for domains in brand_words.values() for d in domains}
+    brand_words = _brand_words() if brand_words is None else brand_words
+    official = {d for domains in brand_words.values() for d in domains} | set(official_domains)
     result = {"brand_in_domain": None, "domain_keywords": [], "path_keywords": []}
     for url in (u for u in urls if u):
         parts = urlsplit(url)

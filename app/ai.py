@@ -33,6 +33,7 @@ SYSTEM_PROMPT = (
     "brand_in_domain=true → 유명 상표 이름이 들어간 주소지만 그 상표의 공식 주소가 아님"
     "(brand_lookalike=true이면 상표 이름의 글자를 바꾸거나 빼서 비슷하게 흉내 낸 주소), "
     "phishing_keyword_in_domain=true → 주소 이름에 로그인·인증·환불 같은 단어가 들어 있음.\n"
+    "overall.assessment_status가 complete가 아니면 검사 미완료이며 확인 불가를 안전으로 설명하지 마세요. "
     "3. overall은 화면에 표시되는 최종 판정입니다. 말의 강도를 overall.level에 맞추세요. "
     "위험이면 들어가지 말라고 분명히 권하고, 주의면 확인을 권하고, 낮음이면 큰 위험 신호는 없었다고 말하되 "
     "안전을 보장하지 마세요. 바깥의 score·level은 일부 항목만 반영한 값이므로 overall과 다르면 overall을 따르세요.\n"
@@ -89,13 +90,16 @@ def explanation_problems(text, summary):
 
 
 def fallback_text(result):
-    reasons = [r["message"] for r in result["reasons"][:3]]
-    detail = " ".join(reasons) if reasons else "현재 규칙에서 추가 위험 신호를 찾지 못했습니다."
-    if result["score"] is None:
+    view = result.get("verdict") or result
+    reasons = [r["message"] for r in view["reasons"][:3]]
+    detail = " ".join(reasons) if reasons else "현재 검사 범위에서 추가 위험 신호를 찾지 못했습니다."
+    if view["score"] is None:
         detail = "위험도를 산출할 자료가 부족합니다."
-    incomplete = "" if result["analysis_complete"] else " 일부 정보는 확인하지 못했습니다."
-    label = f'{result["score"]}점' if result["score"] is not None else "점수 산출 불가"
-    return f'{result["level"]}({label}): {detail}{incomplete} 안전을 보장하지 않으며, 접속 전 사용자 확인이 필요합니다.'
+    complete = view.get("assessment_status") == "complete" if "verdict" in result else result["analysis_complete"]
+    incomplete = "" if complete else " 일부 정보는 확인하지 못했습니다."
+    label = f'{view["score"]}점' if view["score"] is not None else "점수 산출 불가"
+    return f'{view["level"]}({label}): {detail}{incomplete} 안전을 보장하지 않으며, 접속 전 사용자 확인이 필요합니다.'
+
 
 
 def summary_for_ai(result):
@@ -128,6 +132,7 @@ def summary_for_ai(result):
     verdict = result.get("verdict")
     if verdict:
         summary["overall"] = {"level": verdict["level"],
+                              "assessment_status": verdict.get("assessment_status", result.get("assessment_status")),
                               "reasons": [{"code": r["code"], "message": r["message"]} for r in verdict["reasons"]]}
     return summary
 

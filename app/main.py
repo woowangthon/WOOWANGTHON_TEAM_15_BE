@@ -13,7 +13,7 @@ from app.brand_ocr import read_brands
 from app.models import AnalyzeResponse
 from app.page_analysis import inspect_page
 from app.routers.url_analysis import router as url_analysis_router
-from app.services.brand_alias import expand_brand_texts
+from app.domain_ai import verify_official_domains, apply_domain_report, apply_domain_keyword_reports
 from app.services.domain_keywords import check_domain_keywords
 from app.services.printed_domain import compare_printed_domains
 from app.services.url_analysis import analyze_url_signals
@@ -36,7 +36,7 @@ class HealthResponse(BaseModel):
 
 class AnalyzeRequest(BaseModel):
     qr_text: str = Field(min_length=1, max_length=4096, description="QR에서 읽은 HTTP(S) URL")
-    include_ai: bool = Field(default=True, description="페이지 AI 행동 분석 사용 여부. false이면 외부 AI 호출 없음")
+    include_ai: bool = Field(default=True, description="공식 도메인 AI 검색·페이지 AI 참고 분석 사용 여부. 페이지 AI는 점수에서 제외")
     inspect_page: bool = Field(default=False, description="대상 사이트에 제한된 GET 요청을 보내 정적 HTML을 분석합니다.")
     brand_texts: list[str] = Field(max_length=30, description="OCR 등으로 인식한 브랜드명. URL의 공식 도메인 비교에 사용")
     store_id: str | None = Field(default=None, min_length=1, max_length=128, description="매장 검색 결과의 ID. 생략하면 매장 검사를 수행하지 않음")
@@ -58,9 +58,9 @@ async def analyze(request: AnalyzeRequest):
         url, _, _, _ = parse_url(request.qr_text)
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
-    # "네이버 웹툰" also counts as "네이버" for the official-domain comparison (exact-name DB).
-    brand_texts = expand_brand_texts(request.brand_texts)
-    local = await asyncio.to_thread(analyze_url_signals, url, brand_texts, request.store_id)
+    # AI interprets raw OCR/user names; no local brand aliases or official-domain list.
+    brand_texts = [text.strip() for text in request.brand_texts if text.strip()]
+    local = await asyncio.to_thread(analyze_url_signals, url, brand_texts, request.store_id, compare_brand=False)
     if not local["url_info"]["valid"]:
         raise HTTPException(status_code=422, detail=local["url_info"].get("reason", "잘못된 URL입니다."))
     result = await analyze_url(url)
@@ -74,11 +74,21 @@ async def analyze(request: AnalyzeRequest):
         # A known final file/non-HTML URL still needs task-2 pattern and brand checks.
         if page["status"] != "blocked" and final_url and final_url != url:
             final_local = await asyncio.to_thread(
-                analyze_url_signals, final_url, brand_texts, request.store_id)
+                analyze_url_signals, final_url, brand_texts, request.store_id, compare_brand=False)
     else:
         ai_status = "skipped" if request.include_ai else "disabled"
         ai_model = None
-    # behavior-v1 stays reproducible: task-2 observations do not add/subtract points.
+    urls = [url, final_local["url_info"]["url"] if final_local else None]
+    reports = await verify_official_domains(
+        urls, brand_texts, enabled=request.include_ai and result["navigation_allowed"])
+    apply_domain_report(local, reports)
+    if final_local:
+        apply_domain_report(final_local, reports)
+    verified_domains = {domain for report in reports.values() if report["status"] == "matched"
+                        for domain in report["official_domains"]}
+    keywords = apply_domain_keyword_reports(
+        check_domain_keywords(urls, brand_words={}, official_domains=verified_domains), reports)
+    # Root metadata-v2 contains TLS/age; combined-v2 adds URL/domain/store evidence.
     response = {
         **result,
         "url_analysis": local,
@@ -92,14 +102,15 @@ async def analyze(request: AnalyzeRequest):
         "printed_domain_check": compare_printed_domains(
             [url, final_local["url_info"]["url"] if final_local else None], request.printed_domains),
         # Brand words / phishing words inside a non-official domain name (P1-8).
-        "domain_keyword_check": check_domain_keywords([url, final_local["url_info"]["url"] if final_local else None]),
+        "domain_keyword_check": keywords,
     }
-    # Overall verdict (combined-v1) adds URL/brand/store signals on top of behavior-v1.
-    response["verdict"] = combined_verdict(response)
+    # Page AI is reference-only: neither points nor completeness depend on its outcome.
+    response["verdict"] = combined_verdict(response, brand_requested=bool(brand_texts))
     # The explanation only rewords the finished result; it never changes score, level or signals.
     explained = await explain_result(response, enabled=request.include_ai and request.include_explanation)
     return {
         **response,
+        "ai_explanation": explained["ai_explanation"],
         "explanation": explained["ai_explanation"],
         "explanation_status": explained["ai_status"],
         "explanation_model": explained["ai_model"],
@@ -114,7 +125,7 @@ class BrandOCRRequest(BaseModel):
 
 class BrandCandidate(BaseModel):
     name: str
-    registered: bool = Field(description="공식 도메인 DB에 있는 상표명이면 true (비교 가능)")
+    registered: bool = Field(description="기존 로컬 OCR 별칭 목록 등록 여부. AI 공식 도메인 검색 가능 여부와 무관합니다.")
 
 
 class PrintedDomain(BaseModel):

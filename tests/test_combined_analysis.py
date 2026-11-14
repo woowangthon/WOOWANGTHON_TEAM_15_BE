@@ -4,6 +4,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
+from tests.domain_mocks import install_domain_mock
 
 from app.behavior import ATTACK_TYPES
 from app.main import app
@@ -24,13 +25,14 @@ def metadata(url, age=400, blocked=False):
 
 class CombinedAnalysisTests(unittest.TestCase):
     def setUp(self):
+        self.domain_search = install_domain_mock(self, standalone=True)
         _cache.clear()
         self.client = TestClient(app)
         self.addCleanup(self.client.close)
 
     def test_same_shared_results_with_store_id_and_brand_texts(self):
         url = "https://menu.example.com/store/demo-cafe-01?table=3"
-        body = {"qr_text": url, "brand_texts": ["테스트브랜드"], "store_id": "demo-cafe-01"}
+        body = {"qr_text": url, "brand_texts": ["테스트브랜드"], "store_id": "demo-cafe-01", "include_ai": True}
         with patch("app.main.analyze_url", AsyncMock(return_value=metadata(url))), patch("httpx.AsyncClient.post", AsyncMock()) as post:
             combined = self.client.post("/api/analyze", json=body)
             standalone = self.client.post("/api/url/analyze", json=body)
@@ -109,8 +111,8 @@ class CombinedAnalysisTests(unittest.TestCase):
         data = response.json()
         local = data["url_analysis"]
         self.assertEqual(local["status"], "partial")
-        self.assertEqual(local["errors"], ["BRAND_DB_UNAVAILABLE", "STORE_DB_UNAVAILABLE", "IMPERSONATION_DB_UNAVAILABLE"])
-        self.assertEqual(local["risk_signals"]["brand_domain_status"], "unknown")
+        self.assertEqual(local["errors"], ["STORE_DB_UNAVAILABLE", "IMPERSONATION_DB_UNAVAILABLE"])
+        self.assertEqual(local["risk_signals"]["brand_domain_status"], "matched")
         self.assertIsNone(local["risk_signals"]["store_data_verified"])
         self.assertEqual(local["risk_signals"]["pattern_codes"], ["EXECUTABLE_LINK"])
         self.assertNotIn("private-path", json.dumps(data))

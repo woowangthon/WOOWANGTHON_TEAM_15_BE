@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, patch
 
 import httpx
 from fastapi.testclient import TestClient
+from tests.domain_mocks import install_domain_mock
 
 from app.behavior import ATTACK_TYPES, unknown_attacks
 from app.main import app
@@ -105,6 +106,9 @@ class PageAITests(unittest.IsolatedAsyncioTestCase):
 
 
 class PageAPITests(unittest.TestCase):
+    def setUp(self):
+        self.domain_search = install_domain_mock(self)
+
     def test_opt_in_and_score_response_contract(self):
         with patch("app.main.analyze_url", AsyncMock(return_value=copy.deepcopy(BASE))), patch("app.main.inspect_page", AsyncMock()) as inspect, patch("httpx.AsyncClient.post", AsyncMock()) as post, TestClient(app) as client:
             response = client.post("/api/analyze", json={"qr_text": BASE["url"], "brand_texts": [], "include_ai": False})

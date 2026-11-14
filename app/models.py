@@ -108,8 +108,9 @@ class VerdictReason(BaseModel):
 
 
 class Verdict(BaseModel):
-    """combined-v1 overall verdict (app/verdict.py): behavior-v1 points + URL/brand/store signals."""
+    """combined-v1 combines behavior, URL and domain observations."""
     version: Literal["combined-v1"]
+    assessment_status: Literal["complete", "partial", "failed"]
     score: int | None = Field(ge=0, le=100)
     level: Literal["낮음", "주의", "위험", "확인 불가"]
     reasons: list[VerdictReason]
