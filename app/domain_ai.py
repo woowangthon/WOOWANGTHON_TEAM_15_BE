@@ -18,7 +18,12 @@ from app.config import baze_settings
 from app.security import EXTRACT, parse_url, public_ip
 
 TIMEOUT = 35
+# One extra search is allowed only when the first answer had a verdict but failed the evidence check,
+# and only while the whole check stays inside this budget (the app waits up to 120s for the full scan).
+TOTAL_BUDGET = 50
+MIN_RETRY_SECONDS = 15
 MAX_DOMAINS = 2
+WEAK_EVIDENCE_REASON = "공식 도메인임을 뒷받침하는 독립된 검색 근거가 부족해 확인하지 못했어요."
 # Disclosure-source authorities, not a list of brands or target official domains.
 # Corporate ownership/domains still come from each live AI search.
 DISCLOSURE_AUTHORITIES = ("fss.or.kr", "krx.co.kr")
@@ -37,16 +42,30 @@ PROMPT = (
     "An unrelated domain WITHOUT an expected brand is not automatically impersonation. "
     "official_domains must belong to the expected/inferred brand, never the unrelated QR owner. "
     "Include regional official domains (especially Korean services), not only the global corporate domain. "
-    "For exact official matches explicitly search and cite the separate corporate or regulatory reference domain; "
-    "listing it without citing its searched page is not evidence. "
-    "Search primary organization/government sources establishing the reference domains. Cite searched sources "
-    "outside the checked registered domain as independent corroboration. Search rank, TLS, age, no complaints "
-    "and a suspect's own claims are insufficient. If reference domains cannot be verified, return unknown. "
+    "EVIDENCE RULE (checked by the server; answers breaking it are discarded): source_urls MUST contain "
+    "(1) a searched page on an official domain of the organization, AND (2) at least one searched page on a "
+    "DIFFERENT registered domain than the checked hostname that names the same official domain, e.g. the global "
+    "corporate site (stories.starbucks.com for starbucks.co.kr), a regulator/disclosure filing, a government page, "
+    "an encyclopedia or a major news article. Two pages from the checked site itself are NOT enough: use one of "
+    "your searches specifically to find that outside page. Listing a domain without citing its searched page is "
+    "not evidence. Search rank, TLS, age, no complaints and a suspect's own claims are insufficient. "
+    "If reference domains cannot be verified, return unknown. "
     "No need to prove the suspect domain exists, is malicious or has been reported. "
     "Return every requested hostname exactly once. source_urls must exactly match actual searched URLs. "
     "official_domains are DNS hostnames without paths/schemes; keep concise Korean reasons without URLs/markdown. "
     "Never certify safety or legality, execute JavaScript, submit forms or download files. Return only schema JSON."
 )
+RETRY_NOTE = (
+    " RETRY: your previous answer for these hostnames was discarded because every cited page came from the "
+    "checked site itself. Search again for a page on a DIFFERENT registered domain (global corporate site, "
+    "regulator, government, encyclopedia or major news) that names the official domain, and cite it together "
+    "with the official page."
+)
+
+
+def _weak_hosts(reports):
+    """Hosts where the model gave a verdict but its sources failed the independence/primary check."""
+    return [h for h, r in reports.items() if r["status"] == "unknown" and r["reason"] == WEAK_EVIDENCE_REASON]
 
 
 class DomainCheck(BaseModel):
@@ -166,7 +185,7 @@ def _parse_response(data, hosts, model, brand_hints=()):
             status = "matched" if belongs else "mismatched"
         reason = re.sub(r"\[[^\]]*\]\([^)]*\)", "", check.reason).strip()
         if status == "unknown" and check.status != "unknown":
-            reason = "공식 도메인임을 뒷받침하는 독립된 검색 근거가 부족해 확인하지 못했어요."
+            reason = WEAK_EVIDENCE_REASON
         if status == "mismatched":
             reason = (f"{check.organization or '확인한 상표'}의 검색된 공식 도메인"
                       f"({', '.join(domains)})과 QR 주소가 달라요. 사기 확정은 아니며 접속 전 확인이 필요해요.")
@@ -221,17 +240,35 @@ async def verify_official_domains(urls, brand_texts=(), *, enabled=True):
                             "strict": True, "schema": DomainChecks.model_json_schema()}},
     }
 
-    async def call():
-        async with httpx.AsyncClient(timeout=TIMEOUT, follow_redirects=False, trust_env=False) as client:
+    async def call(request_body, timeout):
+        async with httpx.AsyncClient(timeout=timeout, follow_redirects=False, trust_env=False) as client:
             response = await client.post(settings["base_url"] + "/responses/",
-                                         headers={"Authorization": "Bearer " + settings["api_key"]}, json=body)
+                                         headers={"Authorization": "Bearer " + settings["api_key"]}, json=request_body)
             response.raise_for_status()
             return _parse_response(response.json(), hosts, model, hints)
+
+    errors = (httpx.HTTPError, TimeoutError, ValueError, ValidationError, KeyError, IndexError, TypeError, AttributeError)
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + TOTAL_BUDGET
     try:
-        return await asyncio.wait_for(call(), TIMEOUT + 1)
-    except (httpx.HTTPError, TimeoutError, ValueError, ValidationError, KeyError, IndexError, TypeError, AttributeError):
+        reports = await asyncio.wait_for(call(body, TIMEOUT), TIMEOUT + 1)
+    except errors:
         # No fallback to model memory or a static DB. Never expose upstream bodies or keys.
         return {h: unknown_report("검색 응답이나 공식 출처를 확인하지 못했어요. 다시 검사해 주세요.") for h in hosts}
+
+    weak = _weak_hosts(reports)
+    remaining = deadline - loop.time()
+    if weak and remaining >= MIN_RETRY_SECONDS:
+        timeout = min(TIMEOUT, remaining - 1)
+        try:
+            retry = await asyncio.wait_for(call({**body, "instructions": PROMPT + RETRY_NOTE}, timeout), timeout + 1)
+        except errors:
+            retry = {}
+        # Take a retried answer only where it is now grounded; keep every other first-pass result.
+        for host in weak:
+            if host in retry and retry[host]["status"] != "unknown":
+                reports[host] = retry[host]
+    return reports
 
 
 def apply_domain_report(analysis, reports):

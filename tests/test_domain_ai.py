@@ -6,7 +6,7 @@ from unittest.mock import AsyncMock, patch
 import httpx
 from fastapi.testclient import TestClient
 
-from app.domain_ai import _parse_response, verify_official_domains
+from app.domain_ai import PROMPT, WEAK_EVIDENCE_REASON, _parse_response, verify_official_domains
 from app.main import app
 from tests.test_verdict import complete_response, metadata
 
@@ -141,6 +141,50 @@ class DomainNetworkTests(unittest.IsolatedAsyncioTestCase):
                 result = await verify_official_domains(["https://kakao.com"])
                 self.assertEqual(result["kakao.com"]["status"], "unknown")
                 self.assertNotIn("private-upstream-body", json.dumps(result))
+
+    @staticmethod
+    def self_only():
+        """The model says official, but cites only the checked site itself (fails the evidence check)."""
+        own = check()
+        own["source_urls"] = ["https://kakao.com/about", "https://kakao.com/company"]
+        data = payload([own])
+        data["output"][0]["action"]["sources"] = [{"url": u} for u in own["source_urls"]]
+        return data
+
+    async def test_self_only_sources_retry_once_with_evidence_note_and_accept_grounded_answer(self):
+        replies = [response(self.self_only()), response(payload())]
+        with patch("app.domain_ai.baze_settings", return_value=SETTINGS), \
+             patch("httpx.AsyncClient.post", AsyncMock(side_effect=replies)) as post:
+            result = await verify_official_domains(["https://kakao.com"])
+        self.assertEqual(result["kakao.com"]["status"], "matched")
+        self.assertEqual(post.await_count, 2)
+        first, second = (c.kwargs["json"] for c in post.call_args_list)
+        self.assertEqual(first["instructions"], PROMPT)
+        self.assertTrue(second["instructions"].startswith(PROMPT) and "RETRY" in second["instructions"])
+        self.assertEqual(second["input"], first["input"])  # Same hosts only; nothing new leaves the server.
+
+    async def test_retry_that_is_still_weak_or_fails_keeps_first_unknown(self):
+        failed = httpx.Response(500, request=httpx.Request("POST", SETTINGS["base_url"]), json={})
+        for second in [response(self.self_only()), failed]:
+            with self.subTest(second=second.status_code), patch("app.domain_ai.baze_settings", return_value=SETTINGS), \
+                 patch("httpx.AsyncClient.post", AsyncMock(side_effect=[response(self.self_only()), second])) as post:
+                result = await verify_official_domains(["https://kakao.com"])
+            self.assertEqual(result["kakao.com"]["status"], "unknown")
+            self.assertEqual(result["kakao.com"]["reason"], WEAK_EVIDENCE_REASON)
+            self.assertEqual(post.await_count, 2)
+
+    async def test_no_retry_for_grounded_answers_genuine_unknown_or_without_time_budget(self):
+        genuine = check(status="unknown", relationship="unknown")
+        for data, budget in [(payload(), 50), (payload([genuine]), 50), (self.self_only(), 0)]:
+            with self.subTest(budget=budget), patch("app.domain_ai.baze_settings", return_value=SETTINGS), \
+                 patch("app.domain_ai.TOTAL_BUDGET", budget), \
+                 patch("httpx.AsyncClient.post", AsyncMock(return_value=response(data))) as post:
+                await verify_official_domains(["https://kakao.com"])
+            self.assertEqual(post.await_count, 1)
+
+    def test_prompt_states_the_independent_source_rule(self):
+        self.assertIn("EVIDENCE RULE", PROMPT)
+        self.assertIn("DIFFERENT registered domain", PROMPT)
 
     async def test_timeout_returns_unknown(self):
         with patch("app.domain_ai.baze_settings", return_value=SETTINGS), \
