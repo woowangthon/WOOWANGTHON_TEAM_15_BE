@@ -1,6 +1,7 @@
 """Bound the OCR request body before multipart parsing can spool uploaded files."""
 from starlette.responses import JSONResponse
 
+from app.errors import error_body
 from app.services.ocr import MAX_IMAGE_BYTES
 
 MAX_OCR_BODY_BYTES = MAX_IMAGE_BYTES + 64 * 1024
@@ -18,9 +19,9 @@ class OCRUploadLimitMiddleware:
         if declared is not None:
             try:
                 if len(declared) > 20 or int(declared) > MAX_OCR_BODY_BYTES:
-                    return await JSONResponse({"detail": "OCR 업로드 크기 제한을 초과했습니다."}, 413)(scope, receive, send)
+                    return await JSONResponse(error_body(413, "OCR 업로드 크기 제한을 초과했습니다."), 413)(scope, receive, send)
             except ValueError:
-                return await JSONResponse({"detail": "잘못된 요청 크기입니다."}, 400)(scope, receive, send)
+                return await JSONResponse(error_body(400, "잘못된 요청 크기입니다."), 400)(scope, receive, send)
         chunks = []
         total = 0
         while True:
@@ -30,7 +31,7 @@ class OCRUploadLimitMiddleware:
             chunk = message.get("body", b"")
             total += len(chunk)
             if total > MAX_OCR_BODY_BYTES:
-                return await JSONResponse({"detail": "OCR 업로드 크기 제한을 초과했습니다."}, 413)(scope, receive, send)
+                return await JSONResponse(error_body(413, "OCR 업로드 크기 제한을 초과했습니다."), 413)(scope, receive, send)
             chunks.append(chunk)
             if not message.get("more_body", False):
                 break

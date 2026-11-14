@@ -2,7 +2,7 @@ import asyncio
 import os
 from typing import Annotated, Literal
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
@@ -20,8 +20,10 @@ from app.services.url_analysis import analyze_url_signals
 from app.verdict import combined_verdict
 from app.routers.ocr import router as ocr_router
 from app.middleware.ocr_upload import OCRUploadLimitMiddleware
+from app.errors import ApiError, install_error_handlers
 
 app = FastAPI(title="QR Alert API", version="0.7.0")
+install_error_handlers(app)
 app.add_middleware(OCRUploadLimitMiddleware)
 origins = [s.strip() for s in os.getenv("CORS_ORIGINS", "").split(",") if s.strip()]
 if origins:
@@ -56,12 +58,12 @@ async def analyze(request: AnalyzeRequest):
     try:
         url, _, _, _ = parse_url(request.qr_text)
     except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
+        raise ApiError(422, str(exc), code="INVALID_URL") from exc
     # "네이버 웹툰" also counts as "네이버" for the official-domain comparison (exact-name DB).
     brand_texts = expand_brand_texts(request.brand_texts)
     local = await asyncio.to_thread(analyze_url_signals, url, brand_texts, request.store_id)
     if not local["url_info"]["valid"]:
-        raise HTTPException(status_code=422, detail=local["url_info"].get("reason", "잘못된 URL입니다."))
+        raise ApiError(422, local["url_info"].get("reason", "잘못된 URL입니다."), code="INVALID_URL")
     result = await analyze_url(url)
     final_local = None
     if request.inspect_page:

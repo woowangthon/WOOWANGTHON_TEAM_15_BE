@@ -83,6 +83,37 @@ URL 검사 요청은 `qr_text`, 선택적인 `brand_texts`, `store_id`를 받습
 `/api/url/analyze`는 URL 검사만 필요한 경우에 사용하며 서버가 자기 API를 HTTP로 호출하지 않습니다.
 상세 명세는 [위험 신호 데이터 명세](app/docs/risk_signals_contract.md)를 참고하세요.
 
+## 공통 규칙 (기본 주소·인증·오류 형식)
+
+**기본 주소**: 운영 서버는 아직 없습니다. 개발 중에는 서버를 실행한 PC의 `http://<PC IP>:8000`을 씁니다(같은 Wi-Fi, 방화벽 8000 허용).
+배포 주소는 배포 방식이 정해지면 이 문서와 앱의 `EXPO_PUBLIC_API_URL`을 함께 바꿉니다. 배포 시에는 HTTPS 주소를 사용하세요.
+
+**인증**: 없음 (해커톤 범위). 공개 주소로 배포하면 AI 비용과 서버 부하를 막기 위해 요청 횟수 제한이나 인증을 따로 검토하세요.
+
+**오류 형식**: 모든 오류 응답은 같은 모양입니다. 구현: `app/errors.py`, 테스트: `tests/test_errors.py`.
+```json
+{"detail": "사람이 읽는 문장", "code": "INVALID_URL"}
+```
+요청 형식 오류(422)에는 필드별 목록이 더 붙습니다.
+```json
+{"detail": "요청 형식이 올바르지 않습니다.", "code": "VALIDATION_ERROR", "errors": [{"field": "qr_text", "message": "Field required"}]}
+```
+
+| HTTP | code | 언제 |
+| --- | --- | --- |
+| 400 | BAD_REQUEST | 잘못된 요청 (예: 업로드 크기 값 오류) |
+| 404 | NOT_FOUND | 없는 경로 |
+| 405 | METHOD_NOT_ALLOWED | 지원하지 않는 메서드 |
+| 413 | PAYLOAD_TOO_LARGE | OCR 사진이 너무 큼 |
+| 415 | UNSUPPORTED_MEDIA_TYPE | OCR 사진 형식 오류 |
+| 422 | INVALID_URL | `/api/analyze`에 http/https가 아닌 주소, `@` 포함, 80·443 외 포트 |
+| 422 | VALIDATION_ERROR | 필수 필드 누락, 형식·길이 오류 |
+| 500 | INTERNAL_ERROR | 예상하지 못한 서버 오류 (내부 정보는 응답에 넣지 않음) |
+| 503 | SERVICE_UNAVAILABLE | OCR 준비 안 됨·처리 중 |
+| 504 | TIMEOUT | OCR 처리 시간 초과 |
+
+`detail`은 항상 문자열이라 앱이 그대로 보여줄 수 있습니다. 이전에는 요청 형식 오류의 `detail`이 목록이었습니다.
+
 ## API
 
 POST /api/analyze
